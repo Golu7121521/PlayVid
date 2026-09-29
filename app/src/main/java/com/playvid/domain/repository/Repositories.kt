@@ -2,7 +2,7 @@ package com.playvid.domain.repository
 
 import com.playvid.domain.model.AppSettings
 import com.playvid.domain.model.HistoryItem
-import com.playvid.domain.model.PlaylistEntry
+import com.playvid.domain.model.Playlist
 import kotlinx.coroutines.flow.Flow
 
 interface HistoryRepository {
@@ -19,8 +19,13 @@ interface SettingsRepository {
 }
 
 interface PlaylistRepository {
-    fun observeAll(): Flow<List<PlaylistEntry>>
-    suspend fun addAll(items: List<PlaylistEntry>)
+    fun observePlaylists(): Flow<List<Playlist>>
+    suspend fun get(id: Long): Playlist?
+    suspend fun add(name: String, source: String, isFile: Boolean, userAgent: String): Long
+    suspend fun update(playlist: Playlist)
     suspend fun delete(id: Long)
-    suspend fun clear()
+
+    /** URLs of channels the user starred (across all playlists). */
+    fun observeFavorites(): Flow<Set<String>>
+    suspend fun setFavorite(url: String, favorite: Boolean)
 }

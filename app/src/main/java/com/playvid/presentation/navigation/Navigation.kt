@@ -66,6 +66,7 @@ import com.playvid.presentation.downloads.DownloadsScreen
 import com.playvid.presentation.files.FilesScreen
 import com.playvid.presentation.home.HomeScreen
 import com.playvid.presentation.player.PlayerScreen
+import com.playvid.presentation.playlist.ChannelsScreen
 import com.playvid.presentation.playlist.PlaylistScreen
 import com.playvid.presentation.settings.SettingsScreen
 import androidx.compose.runtime.LaunchedEffect
@@ -75,6 +76,7 @@ object Routes {
     const val FILES = "files"
     const val DOWNLOADS = "downloads"
     const val PLAYLIST = "playlist"
+    const val CHANNELS = "channels/{id}"
     const val SETTINGS = "settings"
     const val PLAYER = "player/{payload}"
 
@@ -184,7 +186,19 @@ fun PlayVidNavHost(sharedText: String? = null, onSharedTextConsumed: () -> Unit 
                 composable(Routes.HOME) { HomeScreen(onPlay = openPlayer) }
                 composable(Routes.FILES) { FilesScreen(onPlay = openPlayer) }
                 composable(Routes.DOWNLOADS) { DownloadsScreen(onPlay = openPlayer) }
-                composable(Routes.PLAYLIST) { PlaylistScreen(onPlay = openPlayer) }
+                composable(Routes.PLAYLIST) {
+                    PlaylistScreen(onOpenPlaylist = { nav.navigate("channels/$it") })
+                }
+                composable(
+                    Routes.CHANNELS,
+                    arguments = listOf(navArgument("id") { type = NavType.LongType })
+                ) { entry ->
+                    ChannelsScreen(
+                        playlistId = entry.arguments?.getLong("id") ?: 0L,
+                        onBack = { nav.popBackStack() },
+                        onPlay = openPlayer
+                    )
+                }
                 composable(Routes.SETTINGS) { SettingsScreen() }
                 composable(
                     route = Routes.PLAYER,
@@ -212,7 +226,8 @@ private fun ThinBottomBar(currentRoute: String?, onSelect: (String) -> Unit) {
                     .selectableGroup()
             ) {
                 tabs.forEach { tab ->
-                    val selected = currentRoute == tab.route
+                    val selected = currentRoute == tab.route ||
+                        (tab.route == Routes.PLAYLIST && currentRoute?.startsWith("channels/") == true)
                     val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     Column(
                         modifier = Modifier

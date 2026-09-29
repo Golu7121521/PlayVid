@@ -1,23 +1,42 @@
 package com.playvid.data.local
 
-import com.playvid.domain.model.PlaylistEntry
+import com.playvid.domain.model.Playlist
 import com.playvid.domain.repository.PlaylistRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class PlaylistRepositoryImpl(private val dao: PlaylistDao) : PlaylistRepository {
 
-    override fun observeAll(): Flow<List<PlaylistEntry>> =
+    override fun observePlaylists(): Flow<List<Playlist>> =
         dao.observeAll().map { list -> list.map { it.toDomain() } }
 
-    override suspend fun addAll(items: List<PlaylistEntry>) {
-        val now = System.currentTimeMillis()
-        dao.insertAll(items.map { PlaylistItemEntity(title = it.title, url = it.url, addedAt = now) })
+    override suspend fun get(id: Long): Playlist? = dao.get(id)?.toDomain()
+
+    override suspend fun add(name: String, source: String, isFile: Boolean, userAgent: String): Long =
+        dao.insert(
+            PlaylistEntity(
+                name = name, source = source, isFile = isFile,
+                userAgent = userAgent, addedAt = System.currentTimeMillis()
+            )
+        )
+
+    override suspend fun update(playlist: Playlist) {
+        val existing = dao.get(playlist.id) ?: return
+        dao.update(
+            existing.copy(
+                name = playlist.name, source = playlist.source,
+                isFile = playlist.isFile, userAgent = playlist.userAgent
+            )
+        )
     }
 
     override suspend fun delete(id: Long) = dao.delete(id)
 
-    override suspend fun clear() = dao.clear()
+    override fun observeFavorites(): Flow<Set<String>> = dao.observeFavoriteUrls().map { it.toSet() }
 
-    private fun PlaylistItemEntity.toDomain() = PlaylistEntry(id = id, title = title, url = url)
+    override suspend fun setFavorite(url: String, favorite: Boolean) {
+        if (favorite) dao.addFavorite(FavoriteChannelEntity(url)) else dao.removeFavorite(url)
+    }
+
+    private fun PlaylistEntity.toDomain() = Playlist(id, name, source, isFile, userAgent)
 }

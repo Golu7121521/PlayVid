@@ -17,9 +17,20 @@ data class HistoryItem(
     fun toRequest() = PlaybackRequest(source = source, title = title, isLocal = isLocal)
 }
 
-/** One entry in a user-built playlist (from a picked .m3u/.m3u8 file or a pasted URL). */
-data class PlaylistEntry(val id: Long, val title: String, val url: String) {
-    fun toRequest() = PlaybackRequest(source = url, title = title, isLocal = false)
+/** A saved playlist: an online .m3u/.m3u8 link or a local file copy, plus the user-agent to use. */
+data class Playlist(
+    val id: Long,
+    val name: String,
+    /** http(s) URL, or an absolute path inside the app's storage when [isFile]. */
+    val source: String,
+    val isFile: Boolean,
+    /** One of the labels in UserAgents.options ("Default", "Chrome", ...). */
+    val userAgent: String
+)
+
+/** One channel parsed out of a playlist. [url] may carry a `|header=value&...` suffix (see PlaybackController). */
+data class Channel(val name: String, val url: String, val logo: String? = null, val group: String? = null) {
+    fun toRequest() = PlaybackRequest(source = url, title = name, isLocal = false)
 }
 
 /** Everything the player needs to start playing something. */

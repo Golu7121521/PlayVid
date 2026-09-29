@@ -13,8 +13,8 @@ android {
         applicationId = "com.playvid"
         minSdk = 26            // Adaptive icons + Picture-in-Picture available on every supported device
         targetSdk = 35
-        versionCode = 33
-        versionName = "3.2.0"
+        versionCode = 34
+        versionName = "3.3.0"
     }
 
     // Release signing: CI passes these through environment variables (see .github/workflows/build.yml)
@@ -73,6 +73,7 @@ dependencies {
     implementation(libs.media3.dash)
     implementation(libs.media3.session)
     implementation(libs.androidx.media)
+    implementation(libs.coil.compose)
     implementation(libs.media3.ui)
     implementation(libs.media3.okhttp)
     implementation(libs.media3.transformer)

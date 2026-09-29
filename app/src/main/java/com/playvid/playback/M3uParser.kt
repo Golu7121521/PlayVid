@@ -1,62 +1,128 @@
 package com.playvid.playback
 
-import com.playvid.domain.model.PlaylistEntry
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.io.IOException
+import com.playvid.domain.model.Channel
+
+/** User-agent choices offered when creating a playlist. Stored by label; [resolve] gives the header value. */
+object UserAgents {
+    val options = listOf("Default", "Chrome", "VLC", "Firefox", "Kodi")
+
+    fun resolve(label: String): String? = when (label) {
+        "Chrome" -> "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+        "VLC" -> "VLC/3.0.20 LibVLC/3.0.20"
+        "Firefox" -> "Mozilla/5.0 (Android 13; Mobile; rv:125.0) Gecko/125.0 Firefox/125.0"
+        "Kodi" -> "Kodi/20.2 (Linux; Android 13) Android/13 Sys_CPU/aarch64"
+        else -> null
+    }
+}
 
 /**
- * Parses a plain M3U/M3U8 *channel list* (one entry per `#EXTINF` + URL pair, or just a bare URL
- * per line) into playable entries. Not for HLS media/master manifests — see [looksLikeHlsManifest].
+ * Parses an M3U/M3U8 *channel list*: `#EXTINF` (name, tvg-logo, group-title) + stream URL, plus the
+ * per-channel extras IPTV lists use — `#EXTVLCOPT` (user-agent / referrer), `#EXTHTTP` (cookie) and
+ * `#KODIPROP` ClearKey licenses. Those extras are folded into the URL as a
+ * `|user-agent=..&referer=..&cookie=..&drmScheme=clearkey&drmLicense=kid:key` suffix, which the
+ * player already understands. Not for HLS media/master manifests — see [looksLikeHlsManifest].
  */
 object M3uParser {
 
-    fun parse(text: String): List<PlaylistEntry> {
-        val out = mutableListOf<PlaylistEntry>()
-        var pendingTitle: String? = null
+    private val ATTR = Regex("""([\w-]+)="([^"]*)"""")
+    private val COOKIE_JSON = Regex(""""cookie"\s*:\s*"([^"]*)"""", RegexOption.IGNORE_CASE)
+    private val UA_JSON = Regex(""""user-agent"\s*:\s*"([^"]*)"""", RegexOption.IGNORE_CASE)
+    private val HEX_PAIR = Regex("""^[0-9a-fA-F]+:[0-9a-fA-F]+$""")
+
+    fun parseChannels(text: String, defaultUserAgent: String? = null): List<Channel> {
+        val out = mutableListOf<Channel>()
+        var name: String? = null
+        var logo: String? = null
+        var group: String? = null
+        var ua: String? = null
+        var referer: String? = null
+        var origin: String? = null
+        var cookie: String? = null
+        var drmScheme: String? = null
+        var drmLicense: String? = null
+
+        fun reset() {
+            name = null; logo = null; group = null; ua = null; referer = null
+            origin = null; cookie = null; drmScheme = null; drmLicense = null
+        }
+
         text.lineSequence().forEach { raw ->
-            val line = raw.trim()
+            val line = raw.trim().removePrefix("\uFEFF")
             when {
                 line.isEmpty() -> {}
-                line.startsWith("#EXTINF") ->
-                    pendingTitle = line.substringAfter(',', missingDelimiterValue = "").trim().ifBlank { null }
-                line.startsWith("#") -> {} // any other tag: ignore
-                else -> {
-                    val title = pendingTitle ?: line.substringAfterLast('/').substringBefore('?').ifBlank { line }
-                    out += PlaylistEntry(id = 0, title = title, url = line)
-                    pendingTitle = null
+                line.startsWith("#EXTINF", ignoreCase = true) -> {
+                    val body = line.substringAfter(':', "")
+                    ATTR.findAll(body).forEach { m ->
+                        when (m.groupValues[1].lowercase()) {
+                            "tvg-logo" -> logo = m.groupValues[2].ifBlank { null }
+                            "group-title" -> group = m.groupValues[2].ifBlank { null }
+                        }
+                    }
+                    name = displayName(body)
                 }
+                line.startsWith("#EXTVLCOPT:", ignoreCase = true) -> {
+                    val opt = line.substringAfter(':')
+                    val key = opt.substringBefore('=').trim().lowercase()
+                    val value = opt.substringAfter('=', "").trim()
+                    when (key) {
+                        "http-user-agent" -> ua = value
+                        "http-referrer", "http-referer" -> referer = value
+                        "http-origin" -> origin = value
+                    }
+                }
+                line.startsWith("#EXTHTTP:", ignoreCase = true) -> {
+                    COOKIE_JSON.find(line)?.groupValues?.get(1)?.let { cookie = it }
+                    UA_JSON.find(line)?.groupValues?.get(1)?.let { ua = it }
+                }
+                line.startsWith("#KODIPROP:", ignoreCase = true) -> {
+                    val prop = line.substringAfter(':')
+                    val key = prop.substringBefore('=').trim().lowercase()
+                    val value = prop.substringAfter('=', "").trim()
+                    when (key) {
+                        "inputstream.adaptive.license_type" -> drmScheme = value.lowercase()
+                        "inputstream.adaptive.license_key" -> drmLicense = value
+                    }
+                }
+                line.startsWith("#") -> {}
+                line.startsWith("http://", ignoreCase = true) || line.startsWith("https://", ignoreCase = true) -> {
+                    val params = mutableListOf<String>()
+                    (ua ?: defaultUserAgent)?.takeIf { it.isNotBlank() && !line.contains("user-agent=", true) }
+                        ?.let { params += "user-agent=$it" }
+                    referer?.takeIf { it.isNotBlank() }?.let { params += "referer=$it" }
+                    origin?.takeIf { it.isNotBlank() }?.let { params += "origin=$it" }
+                    cookie?.takeIf { it.isNotBlank() }?.let { params += "cookie=$it" }
+                    val license = drmLicense
+                    if (drmScheme?.contains("clearkey") == true && license != null && HEX_PAIR.matches(license)) {
+                        params += "drmScheme=clearkey"
+                        params += "drmLicense=$license"
+                    }
+                    val url = when {
+                        params.isEmpty() -> line
+                        line.contains('|') -> line + "&" + params.joinToString("&")
+                        else -> line + "|" + params.joinToString("&")
+                    }
+                    val title = name ?: line.substringBefore('|').substringBefore('?')
+                        .substringAfterLast('/').ifBlank { line }
+                    out += Channel(name = title, url = url, logo = logo, group = group)
+                    reset()
+                }
+                else -> {} // rtmp://, local paths, junk: not playable here
             }
         }
         return out
     }
 
+    /** The text after the first comma that is *outside* quotes (attribute values may contain commas). */
+    private fun displayName(extinfBody: String): String? {
+        var inQuotes = false
+        extinfBody.forEachIndexed { i, c ->
+            if (c == '"') inQuotes = !inQuotes
+            else if (c == ',' && !inQuotes) return extinfBody.substring(i + 1).trim().ifBlank { null }
+        }
+        return null
+    }
+
     /** True if this is an actual HLS stream manifest (one playable video), not an IPTV channel list. */
     fun looksLikeHlsManifest(text: String): Boolean =
         text.contains("#EXT-X-STREAM-INF") || text.contains("#EXT-X-TARGETDURATION") || text.contains("#EXT-X-VERSION")
-
-    /**
-     * Adding a URL from the Playlist tab: a remote .m3u/.m3u8 *channel list* expands into many
-     * entries; an actual HLS stream, or any other link, is added as a single playable entry.
-     */
-    suspend fun resolveUrlToEntries(client: OkHttpClient, url: String): List<PlaylistEntry> {
-        val looksLikePlaylistFile = url.substringBefore('?').lowercase().let { it.endsWith(".m3u") || it.endsWith(".m3u8") }
-        val fallback = listOf(PlaylistEntry(id = 0, title = titleFromUrl(url), url = url))
-        if (!looksLikePlaylistFile) return fallback
-
-        val text = try {
-            client.newCall(Request.Builder().url(url).build()).execute().use { resp ->
-                if (!resp.isSuccessful) null else resp.body?.string()
-            }
-        } catch (e: IOException) {
-            null
-        } ?: return fallback
-
-        if (looksLikeHlsManifest(text)) return fallback
-        val parsed = parse(text)
-        return parsed.ifEmpty { fallback }
-    }
-
-    private fun titleFromUrl(url: String): String =
-        url.substringBefore('?').substringAfterLast('/').ifBlank { url }
 }

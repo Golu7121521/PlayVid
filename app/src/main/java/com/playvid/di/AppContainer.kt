@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.playvid.data.local.AppDatabase
 import com.playvid.data.local.HistoryRepositoryImpl
+import com.playvid.data.local.MIGRATION_2_3
 import com.playvid.data.local.PlaylistRepositoryImpl
 import com.playvid.data.settings.SettingsRepositoryImpl
 import com.playvid.domain.repository.HistoryRepository
@@ -27,6 +28,7 @@ class AppContainer(context: Context) {
 
     private val database: AppDatabase =
         Room.databaseBuilder(appContext, AppDatabase::class.java, "playvid.db")
+            .addMigrations(MIGRATION_2_3)
             .fallbackToDestructiveMigration()
             .build()
 

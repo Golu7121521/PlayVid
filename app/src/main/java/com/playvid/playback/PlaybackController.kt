@@ -26,6 +26,7 @@ import androidx.media3.exoplayer.drm.DrmSessionManager
 import androidx.media3.exoplayer.drm.DrmSessionManagerProvider
 import androidx.media3.exoplayer.drm.FrameworkMediaDrm
 import androidx.media3.exoplayer.drm.LocalMediaDrmCallback
+import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -343,20 +344,31 @@ class PlaybackController(
 
             if (media != null && media.videos.isNotEmpty() && media.audios.isNotEmpty()) {
                 setYtSource(media.videos[ytVideoIndex].url, media.audios[0].url, resumeAt)
-            } else if (isDash && parsedSource?.clearKeyId != null && parsedSource.clearKeyValue != null) {
+            } else if (parsedSource != null && (parsedSource.headers.isNotEmpty() || (isDash && parsedSource.clearKeyId != null))) {
+                // Playlist/IPTV-style link with extras after the URL: custom request headers
+                // (user-agent / referer / origin / cookie) on every manifest + segment request,
+                // and/or ClearKey DRM. Applies to DASH, HLS and plain files alike.
                 val dsf: DataSource.Factory = if (parsedSource.headers.isNotEmpty()) {
-                    // This stream needs specific headers (cookie/referer/origin, e.g. Hotstar's
-                    // token-auth CDN) on every manifest/segment request, not just the shared player's.
                     OkHttpDataSource.Factory(httpClient.newBuilder().build())
                         .setDefaultRequestProperties(parsedSource.headers)
                 } else {
                     dataSourceFactory ?: DefaultDataSource.Factory(context)
                 }
-                val drm = clearKeyDrmSessionManager(parsedSource.clearKeyId, parsedSource.clearKeyValue)
-                val dashSource = DashMediaSource.Factory(dsf)
-                    .setDrmSessionManagerProvider(DrmSessionManagerProvider { drm })
-                    .createMediaSource(item)
-                exo.setMediaSource(dashSource, resumeAt)
+                val keyId = parsedSource.clearKeyId
+                val keyValue = parsedSource.clearKeyValue
+                val source = when {
+                    isDash -> {
+                        val factory = DashMediaSource.Factory(dsf)
+                        if (keyId != null && keyValue != null) {
+                            val drm = clearKeyDrmSessionManager(keyId, keyValue)
+                            factory.setDrmSessionManagerProvider(DrmSessionManagerProvider { drm })
+                        }
+                        factory.createMediaSource(item)
+                    }
+                    isHls -> HlsMediaSource.Factory(dsf).createMediaSource(item)
+                    else -> DefaultMediaSourceFactory(dsf).createMediaSource(item)
+                }
+                exo.setMediaSource(source, resumeAt)
             } else {
                 exo.setMediaItem(item, resumeAt)
             }
