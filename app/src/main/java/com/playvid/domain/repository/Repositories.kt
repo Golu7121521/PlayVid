@@ -21,7 +21,7 @@ interface SettingsRepository {
 interface PlaylistRepository {
     fun observePlaylists(): Flow<List<Playlist>>
     suspend fun get(id: Long): Playlist?
-    suspend fun add(name: String, source: String, isFile: Boolean, userAgent: String): Long
+    suspend fun add(name: String, source: String, isFile: Boolean): Long
     suspend fun update(playlist: Playlist)
     suspend fun delete(id: Long)
 

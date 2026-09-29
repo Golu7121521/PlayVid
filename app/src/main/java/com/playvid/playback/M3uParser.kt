@@ -2,19 +2,6 @@ package com.playvid.playback
 
 import com.playvid.domain.model.Channel
 
-/** User-agent choices offered when creating a playlist. Stored by label; [resolve] gives the header value. */
-object UserAgents {
-    val options = listOf("Default", "Chrome", "VLC", "Firefox", "Kodi")
-
-    fun resolve(label: String): String? = when (label) {
-        "Chrome" -> "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
-        "VLC" -> "VLC/3.0.20 LibVLC/3.0.20"
-        "Firefox" -> "Mozilla/5.0 (Android 13; Mobile; rv:125.0) Gecko/125.0 Firefox/125.0"
-        "Kodi" -> "Kodi/20.2 (Linux; Android 13) Android/13 Sys_CPU/aarch64"
-        else -> null
-    }
-}
-
 /**
  * Parses an M3U/M3U8 *channel list*: `#EXTINF` (name, tvg-logo, group-title) + stream URL, plus the
  * per-channel extras IPTV lists use — `#EXTVLCOPT` (user-agent / referrer), `#EXTHTTP` (cookie) and
@@ -29,7 +16,7 @@ object M3uParser {
     private val UA_JSON = Regex(""""user-agent"\s*:\s*"([^"]*)"""", RegexOption.IGNORE_CASE)
     private val HEX_PAIR = Regex("""^[0-9a-fA-F]+:[0-9a-fA-F]+$""")
 
-    fun parseChannels(text: String, defaultUserAgent: String? = null): List<Channel> {
+    fun parseChannels(text: String): List<Channel> {
         val out = mutableListOf<Channel>()
         var name: String? = null
         var logo: String? = null
@@ -86,7 +73,7 @@ object M3uParser {
                 line.startsWith("#") -> {}
                 line.startsWith("http://", ignoreCase = true) || line.startsWith("https://", ignoreCase = true) -> {
                     val params = mutableListOf<String>()
-                    (ua ?: defaultUserAgent)?.takeIf { it.isNotBlank() && !line.contains("user-agent=", true) }
+                    ua?.takeIf { it.isNotBlank() && !line.contains("user-agent=", true) }
                         ?.let { params += "user-agent=$it" }
                     referer?.takeIf { it.isNotBlank() }?.let { params += "referer=$it" }
                     origin?.takeIf { it.isNotBlank() }?.let { params += "origin=$it" }

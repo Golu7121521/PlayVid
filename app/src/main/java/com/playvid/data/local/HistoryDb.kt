@@ -51,7 +51,6 @@ data class PlaylistEntity(
     val name: String,
     val source: String,
     val isFile: Boolean,
-    val userAgent: String,
     val addedAt: Long
 )
 
@@ -88,7 +87,7 @@ interface PlaylistDao {
 
 @Database(
     entities = [HistoryEntity::class, PlaylistEntity::class, FavoriteChannelEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -96,7 +95,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun playlistDao(): PlaylistDao
 }
 
-/** v2 had a flat "playlist" table of entries; v3 replaces it with named playlists + favorites. History is kept. */
+/** v2 had a flat "playlist" table of entries; v3 replaced it with named playlists + favorites; v4 drops the
+ *  per-playlist user-agent picker (every request now just uses the app's own default headers). History is kept. */
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("DROP TABLE IF EXISTS `playlist`")
@@ -106,5 +106,20 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
                 "`userAgent` TEXT NOT NULL, `addedAt` INTEGER NOT NULL)"
         )
         db.execSQL("CREATE TABLE IF NOT EXISTS `favorite_channels` (`url` TEXT NOT NULL, PRIMARY KEY(`url`))")
+    }
+}
+
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `playlists_new` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, `source` TEXT NOT NULL, `isFile` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL)"
+        )
+        db.execSQL(
+            "INSERT INTO `playlists_new` (id, name, source, isFile, addedAt) " +
+                "SELECT id, name, source, isFile, addedAt FROM `playlists`"
+        )
+        db.execSQL("DROP TABLE `playlists`")
+        db.execSQL("ALTER TABLE `playlists_new` RENAME TO `playlists`")
     }
 }

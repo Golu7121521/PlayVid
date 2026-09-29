@@ -13,8 +13,8 @@ android {
         applicationId = "com.playvid"
         minSdk = 26            // Adaptive icons + Picture-in-Picture available on every supported device
         targetSdk = 35
-        versionCode = 34
-        versionName = "3.3.0"
+        versionCode = 35
+        versionName = "3.3.1"
     }
 
     // Release signing: CI passes these through environment variables (see .github/workflows/build.yml)

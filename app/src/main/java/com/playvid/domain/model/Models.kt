@@ -23,9 +23,7 @@ data class Playlist(
     val name: String,
     /** http(s) URL, or an absolute path inside the app's storage when [isFile]. */
     val source: String,
-    val isFile: Boolean,
-    /** One of the labels in UserAgents.options ("Default", "Chrome", ...). */
-    val userAgent: String
+    val isFile: Boolean
 )
 
 /** One channel parsed out of a playlist. [url] may carry a `|header=value&...` suffix (see PlaybackController). */

@@ -4,7 +4,6 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
@@ -48,7 +46,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.playvid.domain.model.Playlist
-import com.playvid.playback.UserAgents
 import com.playvid.presentation.AppViewModelProvider
 import com.playvid.presentation.components.EmptyState
 import com.playvid.presentation.components.LocalNotifier
@@ -135,30 +132,27 @@ fun PlaylistScreen(
             initialName = "",
             initialUrl = "",
             urlEditable = true,
-            initialUserAgent = UserAgents.options.first(),
             confirmLabel = "Create",
             onDismiss = { dialog = null },
-            onConfirm = { name, url, ua -> vm.addUrl(name, url, ua); dialog = null }
+            onConfirm = { name, url -> vm.addUrl(name, url); dialog = null }
         )
         is PlaylistDialog.AddFile -> PlaylistDetailsDialog(
             title = "Enter Playlist details",
             initialName = d.suggestedName,
             initialUrl = "Local file",
             urlEditable = false,
-            initialUserAgent = UserAgents.options.first(),
             confirmLabel = "Create",
             onDismiss = { dialog = null },
-            onConfirm = { name, _, ua -> vm.addFile(name, d.uri, ua); dialog = null }
+            onConfirm = { name, _ -> vm.addFile(name, d.uri); dialog = null }
         )
         is PlaylistDialog.Edit -> PlaylistDetailsDialog(
             title = "Edit Playlist",
             initialName = d.playlist.name,
             initialUrl = if (d.playlist.isFile) "Local file" else d.playlist.source,
             urlEditable = !d.playlist.isFile,
-            initialUserAgent = d.playlist.userAgent,
             confirmLabel = "Save",
             onDismiss = { dialog = null },
-            onConfirm = { name, url, ua -> vm.update(d.playlist, name, url, ua); dialog = null },
+            onConfirm = { name, url -> vm.update(d.playlist, name, url); dialog = null },
             onDelete = { vm.delete(d.playlist); dialog = null }
         )
     }
@@ -199,23 +193,20 @@ private fun PlaylistCard(playlist: Playlist, onClick: () -> Unit, onEdit: () -> 
     }
 }
 
-/** Name + URL + UserAgent form: used to create (URL or file) and to edit a playlist. */
+/** Name + URL form: used to create (URL or file) and to edit a playlist. */
 @Composable
 private fun PlaylistDetailsDialog(
     title: String,
     initialName: String,
     initialUrl: String,
     urlEditable: Boolean,
-    initialUserAgent: String,
     confirmLabel: String,
     onDismiss: () -> Unit,
-    onConfirm: (name: String, url: String, userAgent: String) -> Unit,
+    onConfirm: (name: String, url: String) -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
     var name by remember { mutableStateOf(initialName) }
     var url by remember { mutableStateOf(initialUrl) }
-    var userAgent by remember { mutableStateOf(initialUserAgent) }
-    var uaMenu by remember { mutableStateOf(false) }
     val fieldShape = RoundedCornerShape(14.dp)
 
     Dialog(onDismissRequest = onDismiss) {
@@ -248,29 +239,11 @@ private fun PlaylistDetailsDialog(
                     enabled = urlEditable,
                     shape = fieldShape
                 )
-                Box {
-                    OutlinedTextField(
-                        value = userAgent,
-                        onValueChange = {},
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("UserAgent") },
-                        readOnly = true,
-                        singleLine = true,
-                        shape = fieldShape,
-                        trailingIcon = { Icon(Icons.Filled.ArrowDropDown, contentDescription = null) }
-                    )
-                    Box(Modifier.matchParentSize().clickable { uaMenu = true })
-                    DropdownMenu(expanded = uaMenu, onDismissRequest = { uaMenu = false }) {
-                        UserAgents.options.forEach { option ->
-                            DropdownMenuItem(text = { Text(option) }, onClick = { userAgent = option; uaMenu = false })
-                        }
-                    }
-                }
                 Spacer(Modifier.height(2.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
                     Button(
-                        onClick = { onConfirm(name, url, userAgent) },
+                        onClick = { onConfirm(name, url) },
                         enabled = if (urlEditable) url.isNotBlank() else true,
                         modifier = Modifier.weight(1f)
                     ) { Text(confirmLabel) }

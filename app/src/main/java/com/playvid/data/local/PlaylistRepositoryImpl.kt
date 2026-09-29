@@ -12,22 +12,12 @@ class PlaylistRepositoryImpl(private val dao: PlaylistDao) : PlaylistRepository 
 
     override suspend fun get(id: Long): Playlist? = dao.get(id)?.toDomain()
 
-    override suspend fun add(name: String, source: String, isFile: Boolean, userAgent: String): Long =
-        dao.insert(
-            PlaylistEntity(
-                name = name, source = source, isFile = isFile,
-                userAgent = userAgent, addedAt = System.currentTimeMillis()
-            )
-        )
+    override suspend fun add(name: String, source: String, isFile: Boolean): Long =
+        dao.insert(PlaylistEntity(name = name, source = source, isFile = isFile, addedAt = System.currentTimeMillis()))
 
     override suspend fun update(playlist: Playlist) {
         val existing = dao.get(playlist.id) ?: return
-        dao.update(
-            existing.copy(
-                name = playlist.name, source = playlist.source,
-                isFile = playlist.isFile, userAgent = playlist.userAgent
-            )
-        )
+        dao.update(existing.copy(name = playlist.name, source = playlist.source, isFile = playlist.isFile))
     }
 
     override suspend fun delete(id: Long) = dao.delete(id)
@@ -38,5 +28,5 @@ class PlaylistRepositoryImpl(private val dao: PlaylistDao) : PlaylistRepository 
         if (favorite) dao.addFavorite(FavoriteChannelEntity(url)) else dao.removeFavorite(url)
     }
 
-    private fun PlaylistEntity.toDomain() = Playlist(id, name, source, isFile, userAgent)
+    private fun PlaylistEntity.toDomain() = Playlist(id, name, source, isFile)
 }

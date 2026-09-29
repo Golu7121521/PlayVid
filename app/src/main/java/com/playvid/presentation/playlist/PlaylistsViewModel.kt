@@ -28,19 +28,19 @@ class PlaylistsViewModel(
     val message: StateFlow<String?> = _message
     fun dismissMessage() { _message.value = null }
 
-    fun addUrl(name: String, url: String, userAgent: String) {
+    fun addUrl(name: String, url: String) {
         val cleanUrl = url.trim()
         if (!cleanUrl.startsWith("http://", true) && !cleanUrl.startsWith("https://", true)) {
             _message.value = "Enter a valid http(s) playlist URL."
             return
         }
         viewModelScope.launch {
-            repo.add(name.trim().ifBlank { nameFromUrl(cleanUrl) }, cleanUrl, false, userAgent)
+            repo.add(name.trim().ifBlank { nameFromUrl(cleanUrl) }, cleanUrl, false)
         }
     }
 
     /** Copies the picked .m3u into app storage so the playlist keeps working after the picker's access ends. */
-    fun addFile(name: String, uri: Uri, userAgent: String) {
+    fun addFile(name: String, uri: Uri) {
         viewModelScope.launch {
             val text = try {
                 withContext(Dispatchers.IO) {
@@ -56,20 +56,14 @@ class PlaylistsViewModel(
             val file = withContext(Dispatchers.IO) {
                 File(app.filesDir, "playlist_${System.currentTimeMillis()}.m3u").also { it.writeText(text) }
             }
-            repo.add(name.trim().ifBlank { "Playlist" }, file.absolutePath, true, userAgent)
+            repo.add(name.trim().ifBlank { "Playlist" }, file.absolutePath, true)
         }
     }
 
-    fun update(playlist: Playlist, name: String, url: String, userAgent: String) {
+    fun update(playlist: Playlist, name: String, url: String) {
         viewModelScope.launch {
             val newSource = if (playlist.isFile) playlist.source else url.trim().ifBlank { playlist.source }
-            repo.update(
-                playlist.copy(
-                    name = name.trim().ifBlank { playlist.name },
-                    source = newSource,
-                    userAgent = userAgent
-                )
-            )
+            repo.update(playlist.copy(name = name.trim().ifBlank { playlist.name }, source = newSource))
         }
     }
 

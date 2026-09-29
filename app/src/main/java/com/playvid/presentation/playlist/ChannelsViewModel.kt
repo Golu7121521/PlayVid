@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import com.playvid.domain.model.Channel
 import com.playvid.domain.repository.PlaylistRepository
 import com.playvid.playback.M3uParser
-import com.playvid.playback.UserAgents
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -75,12 +74,11 @@ class ChannelsViewModel(
                 _state.value = ChannelsUiState(loading = false, error = "This playlist no longer exists.")
                 return@launch
             }
-            val userAgent = UserAgents.resolve(playlist.userAgent)
             val fetched = withContext(Dispatchers.IO) {
                 if (playlist.isFile) {
                     try { Fetched.Text(File(playlist.source).readText()) } catch (e: Exception) { Fetched.Failed }
                 } else {
-                    fetch(playlist.source, userAgent)
+                    fetch(playlist.source)
                 }
             }
             val single = listOf(Channel(name = playlist.name, url = playlist.source))
@@ -90,7 +88,7 @@ class ChannelsViewModel(
                 Fetched.NotText -> single
                 is Fetched.Text ->
                     if (M3uParser.looksLikeHlsManifest(fetched.value)) single
-                    else M3uParser.parseChannels(fetched.value, userAgent)
+                    else M3uParser.parseChannels(fetched.value)
             }
             _state.value = when {
                 channels == null -> ChannelsUiState(
@@ -104,12 +102,18 @@ class ChannelsViewModel(
     }
 
     /** Reads a remote playlist as text, capped so a video link can't be pulled down in full. */
-    private fun fetch(url: String, userAgent: String?): Fetched = try {
-        val request = Request.Builder().url(url).apply { userAgent?.let { header("User-Agent", it) } }.build()
+    private fun fetch(url: String): Fetched = try {
+        val request = Request.Builder().url(url).build()
         httpClient.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) return@use Fetched.Failed
-            val type = resp.header("Content-Type").orEmpty().lowercase()
-            if (type.startsWith("video/") || type.startsWith("audio/")) return@use Fetched.NotText
+            // A .m3u/.m3u8 URL is always treated as text even if the server mislabels it (GitHub
+            // Pages and plenty of IPTV hosts serve these as "audio/x-mpegurl", "video/...", etc.
+            // — trust the extension, since a real playlist link is never binary).
+            val looksLikePlaylistFile = url.substringBefore('?').lowercase().let { it.endsWith(".m3u") || it.endsWith(".m3u8") }
+            if (!looksLikePlaylistFile) {
+                val type = resp.header("Content-Type").orEmpty().lowercase()
+                if (type.startsWith("video/") || type.startsWith("audio/")) return@use Fetched.NotText
+            }
             val body = resp.body ?: return@use Fetched.Failed
             val out = ByteArrayOutputStream()
             val buffer = ByteArray(16 * 1024)
