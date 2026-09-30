@@ -314,13 +314,13 @@ class PlaybackController(
             if (media == null) {
                 _state.update {
                     it.copy(
-                        downloadOptions = if (isHls || isDash) emptyList() else listOf(DownloadOption("Original", parsedSource!!.url)),
+                        downloadOptions = if (req.isLocal || isHls || isDash) emptyList() else listOf(DownloadOption("Original", parsedSource!!.url)),
                         audioDownloadOptions = emptyList()
                     )
                 }
                 // HLS could be VOD (downloadable) or truly live; only known after reading the
                 // manifest, so check in the background without delaying playback.
-                if (isHls) {
+                if (isHls && !req.isLocal) {
                     val sourceKey = req.source
                     val hlsUrl = parsedSource!!.url
                     appScope.launch {

@@ -14,6 +14,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -71,6 +73,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -111,6 +116,7 @@ fun PlayerScreen(payload: String, onBack: () -> Unit) {
     val activity = remember(context) { context.findActivity() }
     val pip = LocalPipController.current
     val view = LocalView.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val clipboard = LocalClipboardManager.current
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
@@ -144,14 +150,17 @@ fun PlayerScreen(payload: String, onBack: () -> Unit) {
     }
 
     // Hide status + navigation bars for the whole time the player is open (portrait and landscape).
-    // On the very first entry the window can still be settling (just gained focus / laid out),
-    // so a single hide() call is sometimes dropped: hiding again shortly after catches that.
+    // On a cold app start the window can still be settling (layout/focus not done yet) well
+    // beyond a normal warm launch, so a hide() call right away is often dropped; keep retrying
+    // for a couple of seconds to reliably catch that instead of leaving a bar showing until the
+    // user happens to touch something (like the brightness gesture) that forces a re-layout.
     LaunchedEffect(Unit) {
         val controllerCompat = WindowCompat.getInsetsController(activity.window, view)
         controllerCompat.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        repeat(3) { i ->
+        val delaysMs = longArrayOf(0, 120, 250, 450, 800, 1300, 2000)
+        delaysMs.forEach { d ->
+            if (d > 0) delay(d)
             controllerCompat.hide(WindowInsetsCompat.Type.systemBars())
-            if (i < 2) delay(120)
         }
     }
     DisposableEffect(Unit) {
@@ -208,10 +217,12 @@ fun PlayerScreen(payload: String, onBack: () -> Unit) {
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         // Video surface. No built-in controller: our Compose controls draw on top.
+        var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
         AndroidView(
             factory = { ctx ->
                 (LayoutInflater.from(ctx).inflate(R.layout.view_player, null, false) as PlayerView).also {
                     it.player = controller.player
+                    playerViewRef = it
                 }
             },
             update = {
@@ -222,8 +233,43 @@ fun PlayerScreen(payload: String, onBack: () -> Unit) {
                 }
             },
             modifier = Modifier.fillMaxSize(),
-            onRelease = { it.player = null }
+            onRelease = {
+                it.player = null
+                if (playerViewRef === it) playerViewRef = null
+            }
         )
+
+        // Rarely, the video surface goes black (a lost ExoPlayer/TextureView attachment) while
+        // audio keeps playing — re-attaching the player is a cheap, reliable fix for that, so do
+        // it automatically whenever the app comes back to the foreground rather than making the
+        // person switch to the mini player and back to force it themselves.
+        DisposableEffect(lifecycleOwner) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    playerViewRef?.let { pv ->
+                        pv.player = null
+                        pv.player = controller.player
+                    }
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+
+        // Also re-attach whenever the orientation flips: a rotation can just as easily leave the
+        // video surface detached as backgrounding/returning does. Skip the very first composition
+        // (the factory above already attached the player) so there's no redundant reattach/flicker.
+        var isFirstOrientation by remember { mutableStateOf(true) }
+        LaunchedEffect(isLandscape) {
+            if (isFirstOrientation) {
+                isFirstOrientation = false
+            } else {
+                playerViewRef?.let { pv ->
+                    pv.player = null
+                    pv.player = controller.player
+                }
+            }
+        }
 
         // Tap layer: single tap = show/hide controls, double tap left/right half = seek 10 s,
         // press and hold = fast-forward at settings.holdSpeedMultiplier while held.
@@ -422,7 +468,7 @@ fun PlayerScreen(payload: String, onBack: () -> Unit) {
                     onSeekTo = controller::seekTo,
                     onToggleMute = controller::toggleMute,
                     showQuality = !state.isLocal && state.qualities.size > 1,
-                    showAudio = !state.isLocal && state.audioTracks.size > 1,
+                    showAudio = state.audioTracks.size > 1,
                     showSubtitles = state.textTracks.isNotEmpty(),
                     showPip = pip.isSupported,
                     showCopyUrl = request != null && !request.isLocal,
@@ -449,20 +495,28 @@ fun PlayerScreen(payload: String, onBack: () -> Unit) {
                 )
             }
 
-            picker?.let { kind ->
-                PlayerPickerPanel(
-                    kind = kind,
-                    state = state,
-                    onDismiss = { picker = null },
-                    onAutoQuality = { controller.selectAutoQuality(); picker = null },
-                    onQuality = { controller.selectQuality(it); picker = null },
-                    onAudio = { controller.selectAudio(it); picker = null },
-                    onText = { controller.selectText(it); picker = null },
-                    onSpeed = { controller.setSpeed(it); picker = null },
-                    onDownload = { controller.downloadVideo(it); picker = null },
-                    onDownloadAudio = { controller.downloadAudio(it); picker = null },
-                    onPickDownloadType = { isAudio -> picker = if (isAudio) PickerKind.DOWNLOAD_AUDIO else PickerKind.DOWNLOAD }
-                )
+            var lastPicker by remember { mutableStateOf<PickerKind?>(null) }
+            LaunchedEffect(picker) { picker?.let { lastPicker = it } }
+            AnimatedVisibility(
+                visible = picker != null,
+                enter = fadeIn(tween(180)) + slideInVertically(tween(180)) { it / 3 },
+                exit = fadeOut(tween(180)) + slideOutVertically(tween(180)) { it / 3 }
+            ) {
+                lastPicker?.let { kind ->
+                    PlayerPickerPanel(
+                        kind = kind,
+                        state = state,
+                        onDismiss = { picker = null },
+                        onAutoQuality = { controller.selectAutoQuality(); picker = null },
+                        onQuality = { controller.selectQuality(it); picker = null },
+                        onAudio = { controller.selectAudio(it); picker = null },
+                        onText = { controller.selectText(it); picker = null },
+                        onSpeed = { controller.setSpeed(it); picker = null },
+                        onDownload = { controller.downloadVideo(it); picker = null },
+                        onDownloadAudio = { controller.downloadAudio(it); picker = null },
+                        onPickDownloadType = { isAudio -> picker = if (isAudio) PickerKind.DOWNLOAD_AUDIO else PickerKind.DOWNLOAD }
+                    )
+                }
             }
 
             // Resume prompt: "Continue from 25:40?"

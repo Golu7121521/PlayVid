@@ -178,10 +178,10 @@ fun PlayVidNavHost(sharedText: String? = null, onSharedTextConsumed: () -> Unit 
                 startDestination = Routes.HOME,
                 // Player is edge-to-edge; other screens respect the system bars.
                 modifier = Modifier.padding(if (inPlayer) PaddingValues() else padding),
-                enterTransition = { fadeIn(tween(150)) },
-                exitTransition = { fadeOut(tween(150)) },
-                popEnterTransition = { fadeIn(tween(150)) },
-                popExitTransition = { fadeOut(tween(150)) }
+                enterTransition = { fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 12 } },
+                exitTransition = { fadeOut(tween(180)) },
+                popEnterTransition = { fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 12 } },
+                popExitTransition = { fadeOut(tween(180)) }
             ) {
                 composable(Routes.HOME) { HomeScreen(onPlay = openPlayer) }
                 composable(Routes.FILES) { FilesScreen(onPlay = openPlayer) }
