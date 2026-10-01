@@ -3,15 +3,14 @@ name: Build PlayVid
 on:
   push:
     branches: [main, master]
+  pull_request:
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
+      # true only when the keystore secret has been added to the repo
       HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
@@ -21,12 +20,32 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # Installs Gradle itself, so no gradle-wrapper.jar is required in the repo
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
 
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlayVid-debug
+          path: app/build/outputs/apk/debug/*.apk
+
+      # Debug APKs skip minification/resource-shrinking entirely and bundle every CPU
+      # architecture's native libraries into one file, so they're far bigger than what actually
+      # ships. This release build applies both (and the 4 per-architecture splits below) even
+      # without a signing key — the resulting APKs just aren't signed for the Play Store yet.
+      - name: Build release APKs (armeabi-v7a, arm64-v8a, x86, x86_64)
+        run: gradle assembleRelease --stacktrace
+
+      - name: Upload release APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlayVid-release
+          path: app/build/outputs/apk/release/*.apk
 
       - name: Decode keystore
         if: env.HAS_KEYSTORE == 'true'
@@ -43,17 +62,11 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle assembleRelease bundleRelease --stacktrace
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        if: success()
+      - name: Upload signed release files
+        if: env.HAS_KEYSTORE == 'true'
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: "v1.0.${{ github.run_number }}"
-          name: "PlayVid Build #${{ github.run_number }}"
-          draft: false
-          prerelease: false
-          files: |
-            app/build/outputs/apk/debug/app-debug.apk
+          name: PlayVid-release-signed
+          path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

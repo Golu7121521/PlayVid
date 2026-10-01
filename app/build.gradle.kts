@@ -13,15 +13,29 @@ android {
         applicationId = "com.playvid"
         minSdk = 26            // Adaptive icons + Picture-in-Picture available on every supported device
         targetSdk = 35
-        versionCode = 36
-        versionName = "3.4.0"
+        versionCode = 37
+        versionName = "3.5.0"
+        // UI strings are English-only; this drops every other language's strings that the
+        // libraries (AndroidX, Media3, ...) otherwise bundle for their own internal UI bits.
+        resourceConfigurations += setOf("en")
+    }
+
+    // One APK per CPU architecture instead of one fat APK carrying all four native-library sets
+    // (arm64-v8a, armeabi-v7a, x86_64, x86) — each download is a quarter of the native-lib weight.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = false
+        }
     }
 
     // Release signing: CI passes these through environment variables (see .github/workflows/build.yml)
     signingConfigs {
         create("release") {
             val path = System.getenv("KEYSTORE_PATH")
-            if (path != null) {
+            if (!path.isNullOrBlank()) {
                 storeFile = file(path)
                 storePassword = System.getenv("KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("KEY_ALIAS")
@@ -35,8 +49,14 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            if (System.getenv("KEYSTORE_PATH") != null) {
-                signingConfig = signingConfigs.getByName("release")
+            // An unsigned APK can't be installed at all. Until a real release keystore secret is
+            // added, sign with the debug key instead so this (minified, split, much smaller)
+            // build is still directly installable; switches to the real key automatically once
+            // KEYSTORE_PATH is set.
+            signingConfig = if (!System.getenv("KEYSTORE_PATH").isNullOrBlank()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
             }
         }
     }
