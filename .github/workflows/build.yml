@@ -25,15 +25,6 @@ jobs:
         with:
           gradle-version: 8.9
 
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
-
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: PlayVid-debug
-          path: app/build/outputs/apk/debug/*.apk
-
       # Debug APKs skip minification/resource-shrinking entirely and bundle every CPU
       # architecture's native libraries into one file, so they're far bigger than what actually
       # ships. This release build applies both (and the 4 per-architecture splits below) even
