@@ -1,5 +1,5 @@
 # ==========================================
-# Fix for R8 Missing Classes & Warnings
+# 1. Fix Missing Classes (Rhino / Desugar Warnings)
 # ==========================================
 -dontwarn java.beans.**
 -dontwarn javax.annotation.**
@@ -12,32 +12,43 @@
 -dontwarn org.mozilla.javascript.tools.**
 
 # ==========================================
-# Mozilla Rhino / NewPipeExtractor Optimizations
+# 2. NewPipeExtractor & Mozilla Rhino (Shrink-friendly)
 # ==========================================
-# Rhino ke pure codebase ko keep karne ke bajay zaroori classes rakhein
+# Poora library keep karne ke bajay public API aur classfile bytecode writer rakhein
 -keep class org.mozilla.javascript.** {
     public *;
 }
 -keep class org.mozilla.classfile.ClassFileWriter
 
-# NewPipe patterns ko keep karein (reflection se access hote hain)
+# NewPipe timeago string parsers reflection use karte hain
 -keep class org.schabi.newpipe.extractor.timeago.patterns.** { *; }
 
 # ==========================================
-# Media3 Optimization (Size Kam Karne Ke Liye)
+# 3. Media3 Optimizations
 # ==========================================
-# Pure Media3 package ko blindly keep mat karein
+# '-keep class androidx.media3.** { *; }' KO HATA DIYA HAI.
+# Sirf reflection aur core services ke members ko keep karein:
 -keepclassmembers class androidx.media3.** {
     @androidx.media3.common.util.UnstableApi *;
 }
+-keep class androidx.media3.session.MediaSessionService { *; }
 
 # ==========================================
-# General Shrinking & Optimization
+# 4. Aggressive Size Shrinking Rules
 # ==========================================
+# Class paths ko flatten karke empty package me daalna (DEX size reduce karta hai)
 -repackageclasses ''
 -allowaccessmodification
+
+# Log calls ko release APK se strip karna (Performance + Size dono sudhrega)
 -assumenosideeffects class android.util.Log {
     public static boolean isLoggable(java.lang.String, int);
     public static int v(...);
     public static int d(...);
+    public static int i(...);
+}
+
+# Kotlin metadata ko strip karein
+-assumenosideeffects class kotlin.jvm.internal.Intrinsics {
+    public static void checkNotNullParameter(java.lang.Object, java.lang.String);
 }
