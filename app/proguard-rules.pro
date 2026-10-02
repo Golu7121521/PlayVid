@@ -11,3 +11,8 @@
 -dontwarn javax.script.**
 -dontwarn jdk.dynalink.**
 -dontwarn com.google.re2j.**
+# Rhino's JSON support optionally does java.beans introspection, which doesn't exist on Android
+# and isn't actually reachable through NewPipeExtractor's usage of Rhino; safe to just ignore.
+-dontwarn java.beans.**
+-dontwarn java.applet.**
+-dontwarn javax.swing.**

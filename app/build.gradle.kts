@@ -13,8 +13,8 @@ android {
         applicationId = "com.playvid"
         minSdk = 26            // Adaptive icons + Picture-in-Picture available on every supported device
         targetSdk = 35
-        versionCode = 38
-        versionName = "3.5.1"
+        versionCode = 39
+        versionName = "3.5.2"
         // UI strings are English-only; this drops every other language's strings that the
         // libraries (AndroidX, Media3, ...) otherwise bundle for their own internal UI bits.
         resourceConfigurations += setOf("en")
