@@ -3,14 +3,11 @@
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
 
-## NewPipeExtractor & Rhino
+## NewPipeExtractor
 -keep class org.mozilla.javascript.** { *; }
 -keep class org.mozilla.classfile.ClassFileWriter
--dontwarn org.mozilla.javascript.**
+-dontwarn org.mozilla.javascript.tools.**
 -keep class org.schabi.newpipe.extractor.timeago.patterns.** { *; }
 -dontwarn javax.script.**
 -dontwarn jdk.dynalink.**
 -dontwarn com.google.re2j.**
-
-# Android me java.beans missing hota hai, isliye ise ignore karein
--dontwarn java.beans.**
