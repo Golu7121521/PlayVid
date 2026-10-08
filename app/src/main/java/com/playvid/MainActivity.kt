@@ -46,8 +46,11 @@ class MainActivity : ComponentActivity() {
     /** Text from an incoming "Share" intent (from another app), exposed to Compose. */
     private var sharedText by mutableStateOf<String?>(null)
 
-    private val notificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* no-op either way */ }
+    // Setup multiple permissions request for Storage and Notifications
+    private val requestMultiplePermissions =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+            // You can handle granted/denied states here if needed
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,11 +58,27 @@ class MainActivity : ComponentActivity() {
         addOnPictureInPictureModeChangedListener { info -> pip.inPip = info.isInPictureInPictureMode }
         consumeShareIntent(intent)
 
-        // Needed on Android 13+ or the download and background-playback notifications never show.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        // Determine which permissions we need to request based on Android version
+        val permissionsToRequest = mutableListOf<String>()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ requires POST_NOTIFICATIONS and READ_MEDIA_VIDEO
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.READ_MEDIA_VIDEO)
+            }
+        } else {
+            // Android 12 and below requires READ_EXTERNAL_STORAGE (Important for Android 10)
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+        }
+
+        // Launch permission request if there are any missing permissions
+        if (permissionsToRequest.isNotEmpty()) {
+            requestMultiplePermissions.launch(permissionsToRequest.toTypedArray())
         }
 
         val container = (application as PlayVidApp).container

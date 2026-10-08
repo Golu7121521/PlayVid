@@ -60,15 +60,34 @@ private fun videoPermission(): String =
 fun LocalFoldersScreen(onOpenFolder: (Long, String) -> Unit) {
     val context = LocalContext.current
     val permission = remember { videoPermission() }
+    
+    // Track permission state
     var granted by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED)
     }
-    val requestPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
+    
+    val requestPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+        granted = isGranted
+    }
 
     val vm: LocalFoldersViewModel = viewModel(factory = AppViewModelProvider.Factory)
     val folders by vm.folders.collectAsStateWithLifecycle()
 
-    LaunchedEffect(granted) { if (granted) vm.load() }
+    // Re-check permission status every time this screen enters composition
+    // This handles cases where permission was granted from MainActivity or System Settings
+    LaunchedEffect(context, permission) {
+        val isCurrentlyGranted = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+        if (granted != isCurrentlyGranted) {
+            granted = isCurrentlyGranted
+        }
+    }
+
+    // Load folders immediately when permission is granted
+    LaunchedEffect(granted) { 
+        if (granted) {
+            vm.load() 
+        }
+    }
 
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp)) {
         item {
