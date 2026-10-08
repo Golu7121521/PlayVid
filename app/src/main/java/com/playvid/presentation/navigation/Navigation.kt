@@ -1,47 +1,20 @@
 package com.playvid.presentation.navigation
 
+import android.net.Uri
 import android.util.Base64
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
-import androidx.compose.material.icons.filled.Download
-import android.net.Uri
-import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Cloud // Server tab ke liye naya icon
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -53,10 +26,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.playvid.PlayVidApp
 import com.playvid.domain.model.PlaybackRequest
@@ -66,17 +36,16 @@ import com.playvid.presentation.components.MiniPlayer
 import com.playvid.presentation.components.Notifier
 import com.playvid.presentation.local.LocalFoldersScreen
 import com.playvid.presentation.local.LocalFolderScreen
-import com.playvid.presentation.files.FilesScreen
 import com.playvid.presentation.home.HomeScreen
 import com.playvid.presentation.player.PlayerScreen
 import com.playvid.presentation.playlist.ChannelsScreen
 import com.playvid.presentation.playlist.PlaylistScreen
 import com.playvid.presentation.settings.SettingsScreen
-import androidx.compose.runtime.LaunchedEffect
+import com.playvid.presentation.server.ServerScreen // Naya Import
 
 object Routes {
     const val HOME = "home"
-    const val FILES = "files"
+    const val SERVER = "server" // FILES ki jagah SERVER
     const val LOCAL = "local"
     const val LOCAL_FOLDER = "local_folder/{id}/{name}"
     const val PLAYLIST = "playlist"
@@ -87,10 +56,6 @@ object Routes {
     fun player(request: PlaybackRequest) = "player/${PlaybackPayload.encode(request)}"
 }
 
-/**
- * Packs a PlaybackRequest into one URL-safe string so any URL / URI / title can travel
- * through a navigation route without escaping problems (and survives process death).
- */
 object PlaybackPayload {
     private const val SEP = '\u0000'
     private const val FLAGS = Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
@@ -113,7 +78,7 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 
 private val tabs = listOf(
     Tab(Routes.HOME, "Home", Icons.Filled.Home),
-    Tab(Routes.FILES, "Files", Icons.Filled.Folder),
+    Tab(Routes.SERVER, "Server", Icons.Filled.Cloud), // Bottom bar mein Server
     Tab(Routes.LOCAL, "Local", Icons.Filled.VideoLibrary),
     Tab(Routes.PLAYLIST, "Playlist", Icons.AutoMirrored.Filled.PlaylistPlay),
     Tab(Routes.SETTINGS, "Settings", Icons.Filled.Settings)
@@ -144,7 +109,6 @@ fun PlayVidNavHost(sharedText: String? = null, onSharedTextConsumed: () -> Unit 
 
     val openPlayer: (PlaybackRequest) -> Unit = { nav.navigate(Routes.player(it)) }
 
-    // Another app shared a link with PlayVid: pull the URL out of the shared text and play it.
     LaunchedEffect(sharedText) {
         val text = sharedText
         if (text != null) {
@@ -180,7 +144,6 @@ fun PlayVidNavHost(sharedText: String? = null, onSharedTextConsumed: () -> Unit 
             NavHost(
                 navController = nav,
                 startDestination = Routes.HOME,
-                // Player is edge-to-edge; other screens respect the system bars.
                 modifier = Modifier.padding(if (inPlayer) PaddingValues() else padding),
                 enterTransition = { fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 12 } },
                 exitTransition = { fadeOut(tween(180)) },
@@ -188,7 +151,7 @@ fun PlayVidNavHost(sharedText: String? = null, onSharedTextConsumed: () -> Unit 
                 popExitTransition = { fadeOut(tween(180)) }
             ) {
                 composable(Routes.HOME) { HomeScreen(onPlay = openPlayer) }
-                composable(Routes.FILES) { FilesScreen(onPlay = openPlayer) }
+                composable(Routes.SERVER) { ServerScreen(onPlay = openPlayer) } // Naya Route
                 composable(Routes.LOCAL) {
                     LocalFoldersScreen(onOpenFolder = { id, name ->
                         nav.navigate("local_folder/$id/${Uri.encode(name)}")
@@ -234,7 +197,6 @@ fun PlayVidNavHost(sharedText: String? = null, onSharedTextConsumed: () -> Unit 
     }
 }
 
-/** Slim (52 dp) bottom bar: bluish surface, hairline on top, small icon + label, accent for the selected tab. */
 @Composable
 private fun ThinBottomBar(currentRoute: String?, onSelect: (String) -> Unit) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
