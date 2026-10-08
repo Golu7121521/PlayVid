@@ -85,6 +85,23 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(settings.pipEnabled) { pip.autoEnabled = settings.pipEnabled }
             LaunchedEffect(settings.backgroundPlayback) { backgroundPlaybackEnabled = settings.backgroundPlayback }
 
+            // The player screen hides the status/nav bars itself too, but on a slow cold start
+            // (old/low-end devices especially) the window can still be settling well past a
+            // normal warm-launch timeframe, so that first hide() is sometimes dropped. Driving
+            // the retries from here — the Activity's own window, not a timing-sensitive Compose
+            // view deep in the player screen — catches that reliably on the very first video.
+            LaunchedEffect(pip.enabled) {
+                if (pip.enabled) {
+                    val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+                    insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    val delaysMs = longArrayOf(0, 100, 200, 350, 600, 1000, 1600, 2400, 3500)
+                    delaysMs.forEach { d ->
+                        if (d > 0) kotlinx.coroutines.delay(d)
+                        if (pip.enabled) insetsController.hide(WindowInsetsCompat.Type.systemBars())
+                    }
+                }
+            }
+
             CompositionLocalProvider(LocalPipController provides pip) {
                 PlayVidTheme(darkTheme = dark) {
                     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {

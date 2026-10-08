@@ -399,7 +399,10 @@ class PlaybackController(
     private fun downloadOptionsFor(media: YouTubeMedia): List<DownloadOption> {
         if (media.liveHlsUrl != null) return emptyList() // live: no fixed file to save
         if (media.videos.isNotEmpty() && media.audios.isNotEmpty()) {
-            val audio = media.audios.first().url
+            // Prefer AAC (M4A) audio for downloads specifically: paired with the H.264 video this
+            // app already prefers, it lets the merge step do a fast stream-copy instead of a slow
+            // on-device transcode (which is what was taking so long on older/weaker phones).
+            val audio = (media.audios.firstOrNull { it.isM4a } ?: media.audios.first()).url
             return media.videos.map { DownloadOption(it.label, it.url, audio) }
         }
         media.muxedUrl?.let { return listOf(DownloadOption("Original", it)) }

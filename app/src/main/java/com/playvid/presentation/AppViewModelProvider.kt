@@ -5,7 +5,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.playvid.PlayVidApp
-import com.playvid.presentation.downloads.DownloadsViewModel
+import com.playvid.presentation.local.LocalFoldersViewModel
 import com.playvid.presentation.files.FilesViewModel
 import com.playvid.presentation.home.HomeViewModel
 import com.playvid.presentation.playlist.PlaylistsViewModel
@@ -20,7 +20,7 @@ object AppViewModelProvider {
         initializer { HomeViewModel(app().container.historyRepository, app().container.validateUrl) }
         initializer { FilesViewModel(app().container.historyRepository) }
         initializer { SettingsViewModel(app().container.settingsRepository, app().container.historyRepository) }
-        initializer { DownloadsViewModel(app()) }
+        initializer { LocalFoldersViewModel(app()) }
         initializer { PlaylistsViewModel(app(), app().container.playlistRepository) }
     }
 }

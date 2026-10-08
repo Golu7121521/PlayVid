@@ -13,8 +13,8 @@ import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import java.net.URI
 
-/** One selectable video-only or audio-only file for a YouTube video. */
-data class YtStream(val label: String, val url: String, val height: Int = 0, val bitrate: Int = 0)
+/** One selectable video-only or audio-only file for a YouTube video. [isM4a] = AAC-in-MP4 audio. */
+data class YtStream(val label: String, val url: String, val height: Int = 0, val bitrate: Int = 0, val isM4a: Boolean = false)
 
 /**
  * What the player needs to play one YouTube video.
@@ -66,7 +66,10 @@ class YouTubeResolver(private val httpClient: OkHttpClient) {
                 // averageBitrate is unreliable for some videos (comes back 0/unknown); fall back
                 // to the codec name so the entries are at least distinguishable, not "(0 kbps)".
                 val quality = if (kbps > 0) "$kbps kbps" else a.format?.name?.takeIf { it.isNotBlank() } ?: "Track ${i + 1}"
-                YtStream(lang?.let { "$it ($quality)" } ?: "Audio ${i + 1} ($quality)", a.content, bitrate = a.averageBitrate)
+                YtStream(
+                    lang?.let { "$it ($quality)" } ?: "Audio ${i + 1} ($quality)", a.content,
+                    bitrate = a.averageBitrate, isM4a = a.format == MediaFormat.M4A
+                )
             }
 
         if (videos.isNotEmpty() && audios.isNotEmpty()) return YouTubeMedia(title, videos = videos, audios = audios)

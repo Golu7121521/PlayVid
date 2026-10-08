@@ -24,7 +24,9 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Download
+import android.net.Uri
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
@@ -62,7 +64,8 @@ import com.playvid.domain.usecase.UrlValidation
 import com.playvid.presentation.components.LocalNotifier
 import com.playvid.presentation.components.MiniPlayer
 import com.playvid.presentation.components.Notifier
-import com.playvid.presentation.downloads.DownloadsScreen
+import com.playvid.presentation.local.LocalFoldersScreen
+import com.playvid.presentation.local.LocalFolderScreen
 import com.playvid.presentation.files.FilesScreen
 import com.playvid.presentation.home.HomeScreen
 import com.playvid.presentation.player.PlayerScreen
@@ -74,7 +77,8 @@ import androidx.compose.runtime.LaunchedEffect
 object Routes {
     const val HOME = "home"
     const val FILES = "files"
-    const val DOWNLOADS = "downloads"
+    const val LOCAL = "local"
+    const val LOCAL_FOLDER = "local_folder/{id}/{name}"
     const val PLAYLIST = "playlist"
     const val CHANNELS = "channels/{id}"
     const val SETTINGS = "settings"
@@ -110,7 +114,7 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 private val tabs = listOf(
     Tab(Routes.HOME, "Home", Icons.Filled.Home),
     Tab(Routes.FILES, "Files", Icons.Filled.Folder),
-    Tab(Routes.DOWNLOADS, "Downloads", Icons.Filled.Download),
+    Tab(Routes.LOCAL, "Local", Icons.Filled.VideoLibrary),
     Tab(Routes.PLAYLIST, "Playlist", Icons.AutoMirrored.Filled.PlaylistPlay),
     Tab(Routes.SETTINGS, "Settings", Icons.Filled.Settings)
 )
@@ -185,7 +189,25 @@ fun PlayVidNavHost(sharedText: String? = null, onSharedTextConsumed: () -> Unit 
             ) {
                 composable(Routes.HOME) { HomeScreen(onPlay = openPlayer) }
                 composable(Routes.FILES) { FilesScreen(onPlay = openPlayer) }
-                composable(Routes.DOWNLOADS) { DownloadsScreen(onPlay = openPlayer) }
+                composable(Routes.LOCAL) {
+                    LocalFoldersScreen(onOpenFolder = { id, name ->
+                        nav.navigate("local_folder/$id/${Uri.encode(name)}")
+                    })
+                }
+                composable(
+                    Routes.LOCAL_FOLDER,
+                    arguments = listOf(
+                        navArgument("id") { type = NavType.LongType },
+                        navArgument("name") { type = NavType.StringType }
+                    )
+                ) { entry ->
+                    LocalFolderScreen(
+                        folderId = entry.arguments?.getLong("id") ?: 0L,
+                        folderName = Uri.decode(entry.arguments?.getString("name") ?: ""),
+                        onBack = { nav.popBackStack() },
+                        onPlay = openPlayer
+                    )
+                }
                 composable(Routes.PLAYLIST) {
                     PlaylistScreen(onOpenPlaylist = { nav.navigate("channels/$it") })
                 }
@@ -227,7 +249,8 @@ private fun ThinBottomBar(currentRoute: String?, onSelect: (String) -> Unit) {
             ) {
                 tabs.forEach { tab ->
                     val selected = currentRoute == tab.route ||
-                        (tab.route == Routes.PLAYLIST && currentRoute?.startsWith("channels/") == true)
+                        (tab.route == Routes.PLAYLIST && currentRoute?.startsWith("channels/") == true) ||
+                        (tab.route == Routes.LOCAL && currentRoute?.startsWith("local_folder/") == true)
                     val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     Column(
                         modifier = Modifier

@@ -220,9 +220,21 @@ fun PlayerScreen(payload: String, onBack: () -> Unit) {
         var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
         AndroidView(
             factory = { ctx ->
-                (LayoutInflater.from(ctx).inflate(R.layout.view_player, null, false) as PlayerView).also {
-                    it.player = controller.player
-                    playerViewRef = it
+                (LayoutInflater.from(ctx).inflate(R.layout.view_player, null, false) as PlayerView).also { pv ->
+                    pv.player = controller.player
+                    playerViewRef = pv
+                    // Compose can detach/reattach this View's window without the composable itself
+                    // leaving composition (layout animations, certain recompositions); when that
+                    // happens the video surface can come back black while audio keeps playing.
+                    // Re-pointing the player at it as soon as it's back in a window is a cheap,
+                    // reliable fix for that — covers more cases than only watching for resume.
+                    pv.addOnAttachStateChangeListener(object : android.view.View.OnAttachStateChangeListener {
+                        override fun onViewAttachedToWindow(v: android.view.View) {
+                            pv.player = null
+                            pv.player = controller.player
+                        }
+                        override fun onViewDetachedFromWindow(v: android.view.View) {}
+                    })
                 }
             },
             update = {
@@ -263,6 +275,22 @@ fun PlayerScreen(payload: String, onBack: () -> Unit) {
         LaunchedEffect(isLandscape) {
             if (isFirstOrientation) {
                 isFirstOrientation = false
+            } else {
+                playerViewRef?.let { pv ->
+                    pv.player = null
+                    pv.player = controller.player
+                }
+            }
+        }
+
+        // And whenever a different video actually starts loading on this same screen (e.g.
+        // "Choose another video", switching quality/audio track) — one more point where the
+        // surface can come up black instead of showing the new video's first frame.
+        val currentSource by controller.current.collectAsStateWithLifecycle()
+        var isFirstSource by remember { mutableStateOf(true) }
+        LaunchedEffect(currentSource?.source) {
+            if (isFirstSource) {
+                isFirstSource = false
             } else {
                 playerViewRef?.let { pv ->
                     pv.player = null
