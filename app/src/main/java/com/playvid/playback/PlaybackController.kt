@@ -60,7 +60,12 @@ import org.schabi.newpipe.extractor.exceptions.AgeRestrictedContentException
 import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
 import java.io.IOException
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
 import java.util.Locale
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 /**
  * App-wide playback session. It owns the single ExoPlayer, so playback keeps going when
@@ -125,14 +130,11 @@ class PlaybackController(
         override fun onIsPlayingChanged(isPlaying: Boolean) = syncState()
 
         override fun onTracksChanged(tracks: Tracks) {
-            // Per-file YouTube quality/audio come from `yt`, not from ExoPlayer's own track groups.
-            // A YouTube live stream has no such files, so it still needs the regular rebuild.
             if (yt == null || isYtLive) rebuildTracks(tracks)
         }
 
         override fun onPlayerError(error: PlaybackException) {
             val exo = exoPlayer ?: return
-            // A live stream fell behind its window: jump to the live edge and continue.
             if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
                 exo.seekToDefaultPosition()
                 exo.prepare()
@@ -154,9 +156,29 @@ class PlaybackController(
     }
 
     /**
-     * Some links (e.g. FanCode DASH streams) append `|drmScheme=clearkey&drmLicense=keyId:key`
-     * after the manifest URL instead of pointing at a real license server. Splits that off.
+     * Browser-compatible OkHttpClient creation (Relaxed SSL + Custom Headers support)
      */
+    private fun createPermissiveOkHttpClient(): OkHttpClient {
+        val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+            override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+        })
+
+        return try {
+            val sslContext = SSLContext.getInstance("SSL")
+            sslContext.init(null, trustAllCerts, SecureRandom())
+            httpClient.newBuilder()
+                .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
+                .hostnameVerifier { _, _ -> true }
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .build()
+        } catch (e: Exception) {
+            httpClient
+        }
+    }
+
     private data class ParsedSource(
         val url: String,
         val clearKeyId: String? = null,
@@ -164,7 +186,6 @@ class PlaybackController(
         val headers: Map<String, String> = emptyMap()
     )
 
-    /** Maps a lowercase param name from the `|...` suffix to the real HTTP header Android/OkHttp expects. */
     private val HEADER_PARAM_NAMES = mapOf(
         "cookie" to "Cookie",
         "referer" to "Referer",
@@ -191,7 +212,7 @@ class PlaybackController(
                     keyId = v.substring(0, sep)
                     keyValue = v.substring(sep + 1)
                 }
-                k == "drmScheme" -> { /* only clearkey is supported; nothing else to read */ }
+                k == "drmScheme" -> { }
                 HEADER_PARAM_NAMES.containsKey(k.lowercase()) -> {
                     headers[HEADER_PARAM_NAMES.getValue(k.lowercase())] = v
                 }
@@ -200,7 +221,6 @@ class PlaybackController(
         return ParsedSource(url, keyId, keyValue, headers)
     }
 
-    /** ClearKey DRM with keys supplied directly (no license server): builds an offline JWK response. */
     private fun clearKeyDrmSessionManager(keyIdHex: String, keyHex: String): DrmSessionManager {
         fun hexToBase64Url(hex: String): String {
             val clean = hex.trim()
@@ -218,12 +238,17 @@ class PlaybackController(
             .build(callback)
     }
 
-    private fun ensurePlayer(): ExoPlayer {        exoPlayer?.let { return it }
-        // OkHttp: explicit timeouts + redirects + the right User-Agent per YouTube client.
-        val okHttp = OkHttpDataSource.Factory(httpClient.newBuilder().addInterceptor(YouTubeHeadersInterceptor()).build())
-            .setUserAgent("PlayVid/2.3 (Android)")
+    private fun ensurePlayer(): ExoPlayer {
+        exoPlayer?.let { return it }
+
+        // Standard Desktop Chrome User-Agent jo direct streaming servers reject nahi karte
+        val okHttpClient = createPermissiveOkHttpClient()
+        val okHttp = OkHttpDataSource.Factory(okHttpClient)
+            .setUserAgent(DEFAULT_USER_AGENT)
+
         val factory = DefaultDataSource.Factory(context, okHttp)
         dataSourceFactory = factory
+
         val created = ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
             .setAudioAttributes(
@@ -231,7 +256,7 @@ class PlaybackController(
                     .setUsage(C.USAGE_MEDIA)
                     .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
                     .build(),
-                /* handleAudioFocus = */ true
+                true
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
@@ -242,10 +267,6 @@ class PlaybackController(
 
     // ---- Session -----------------------------------------------------------------------
 
-    /**
-     * Starts [req]. If it is already the active item (e.g. coming back from the mini player)
-     * nothing changes, so playback continues without a resume prompt.
-     */
     fun open(req: PlaybackRequest) {
         if (_current.value?.source == req.source && exoPlayer != null) return
         stopCurrent(save = true)
@@ -272,7 +293,7 @@ class PlaybackController(
                 saved.positionMs > 3_000 &&
                 (saved.durationMs <= 0 || saved.positionMs < saved.durationMs - 5_000)
             val resumeAt = if (canResume) saved!!.positionMs else 0L
-            if (_current.value?.source != req.source) return@launch // user opened something else meanwhile
+            if (_current.value?.source != req.source) return@launch
 
             var title = req.title
             var media: YouTubeMedia? = null
@@ -311,6 +332,7 @@ class PlaybackController(
                 (media == null && req.source.lowercase().contains(".m3u8"))
             val parsedSource = if (media == null) parseSource(req.source) else null
             val isDash = parsedSource != null && parsedSource.url.lowercase().contains(".mpd")
+            
             if (media == null) {
                 _state.update {
                     it.copy(
@@ -318,8 +340,6 @@ class PlaybackController(
                         audioDownloadOptions = emptyList()
                     )
                 }
-                // HLS could be VOD (downloadable) or truly live; only known after reading the
-                // manifest, so check in the background without delaying playback.
                 if (isHls && !req.isLocal) {
                     val sourceKey = req.source
                     val hlsUrl = parsedSource!!.url
@@ -331,6 +351,7 @@ class PlaybackController(
                     }
                 }
             }
+
             val item = MediaItem.Builder()
                 .setUri(media?.liveHlsUrl ?: media?.muxedUrl ?: parsedSource?.url ?: req.source)
                 .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build())
@@ -344,18 +365,23 @@ class PlaybackController(
 
             if (media != null && media.videos.isNotEmpty() && media.audios.isNotEmpty()) {
                 setYtSource(media.videos[ytVideoIndex].url, media.audios[0].url, resumeAt)
-            } else if (parsedSource != null && (parsedSource.headers.isNotEmpty() || (isDash && parsedSource.clearKeyId != null))) {
-                // Playlist/IPTV-style link with extras after the URL: custom request headers
-                // (user-agent / referer / origin / cookie) on every manifest + segment request,
-                // and/or ClearKey DRM. Applies to DASH, HLS and plain files alike.
-                val dsf: DataSource.Factory = if (parsedSource.headers.isNotEmpty()) {
-                    OkHttpDataSource.Factory(httpClient.newBuilder().build())
-                        .setDefaultRequestProperties(parsedSource.headers)
-                } else {
-                    dataSourceFactory ?: DefaultDataSource.Factory(context)
+            } else if (parsedSource != null) {
+                // Request headers setup
+                val headers = mutableMapOf<String, String>()
+                headers.putAll(parsedSource.headers)
+                if (!headers.containsKey("User-Agent")) {
+                    headers["User-Agent"] = DEFAULT_USER_AGENT
                 }
+
+                val okHttpClient = createPermissiveOkHttpClient()
+                val okHttpFactory = OkHttpDataSource.Factory(okHttpClient)
+                    .setUserAgent(headers["User-Agent"] ?: DEFAULT_USER_AGENT)
+                    .setDefaultRequestProperties(headers)
+
+                val dsf = DefaultDataSource.Factory(context, okHttpFactory)
                 val keyId = parsedSource.clearKeyId
                 val keyValue = parsedSource.clearKeyValue
+
                 val source = when {
                     isDash -> {
                         val factory = DashMediaSource.Factory(dsf)
@@ -365,15 +391,20 @@ class PlaybackController(
                         }
                         factory.createMediaSource(item)
                     }
-                    isHls -> HlsMediaSource.Factory(dsf).createMediaSource(item)
+                    isHls -> {
+                        // HLS stream ke liye direct HlsMediaSource create karein
+                        HlsMediaSource.Factory(dsf)
+                            .setAllowChunklessPreparation(true)
+                            .createMediaSource(item)
+                    }
                     else -> DefaultMediaSourceFactory(dsf).createMediaSource(item)
                 }
                 exo.setMediaSource(source, resumeAt)
             } else {
                 exo.setMediaItem(item, resumeAt)
             }
+
             exo.prepare()
-            // With a resume prompt the video loads paused; the prompt decides what happens next.
             exo.playWhenReady = !canResume
             startTicker()
 
@@ -382,7 +413,6 @@ class PlaybackController(
         }
     }
 
-    /** Builds and loads a video-only + audio-only pair (YouTube quality/audio-track switching). */
     private fun setYtSource(videoUrl: String, audioUrl: String, startPositionMs: Long) {
         val exo = exoPlayer ?: return
         val factory = dataSourceFactory ?: return
@@ -397,11 +427,8 @@ class PlaybackController(
     }
 
     private fun downloadOptionsFor(media: YouTubeMedia): List<DownloadOption> {
-        if (media.liveHlsUrl != null) return emptyList() // live: no fixed file to save
+        if (media.liveHlsUrl != null) return emptyList()
         if (media.videos.isNotEmpty() && media.audios.isNotEmpty()) {
-            // Prefer AAC (M4A) audio for downloads specifically: paired with the H.264 video this
-            // app already prefers, it lets the merge step do a fast stream-copy instead of a slow
-            // on-device transcode (which is what was taking so long on older/weaker phones).
             val audio = (media.audios.firstOrNull { it.isM4a } ?: media.audios.first()).url
             return media.videos.map { DownloadOption(it.label, it.url, audio) }
         }
@@ -410,11 +437,10 @@ class PlaybackController(
     }
 
     private fun audioDownloadOptionsFor(media: YouTubeMedia): List<AudioDownloadOption> {
-        if (media.liveHlsUrl != null) return emptyList() // live: no fixed file to save
+        if (media.liveHlsUrl != null) return emptyList()
         return media.audios.map { AudioDownloadOption(it.label, it.url) }
     }
 
-    /** Starts a background download (and, for YouTube, a video+audio merge) via [DownloadService]. */
     fun downloadVideo(option: DownloadOption) {
         val title = _current.value?.title?.ifBlank { "video" } ?: "video"
         val id = DownloadRepository.nextId()
@@ -422,7 +448,6 @@ class PlaybackController(
         DownloadService.enqueue(context, id, title, DownloadKind.VIDEO, option.videoUrl, option.audioUrl)
     }
 
-    /** Starts a background audio-only download via [DownloadService]. */
     fun downloadAudio(option: AudioDownloadOption) {
         val title = _current.value?.title?.ifBlank { "audio" } ?: "audio"
         val id = DownloadRepository.nextId()
@@ -430,17 +455,12 @@ class PlaybackController(
         DownloadService.enqueue(context, id, title, DownloadKind.AUDIO, option.url, null)
     }
 
-    /** Invalid link: show the error state without loading anything. */
     fun fail() {
         stopCurrent(save = false)
         _current.value = null
         _state.value = PlayerUiState(isLoading = false, error = HINT_GENERIC)
     }
 
-    /**
-     * Called when the user leaves the player screen. A healthy session keeps playing in the
-     * mini player; a failed / finished / not-yet-confirmed one is closed.
-     */
     fun onLeavePlayer() {
         val s = _state.value
         val ended = exoPlayer?.playbackState == Player.STATE_ENDED
@@ -448,7 +468,6 @@ class PlaybackController(
         if (s.error != null || s.resumePrompt != null || ended) close() else saveProgress()
     }
 
-    /** Ends the session (mini player disappears). The ExoPlayer instance is kept for reuse. */
     fun close() {
         stopCurrent(save = true)
         _current.value = null
@@ -456,7 +475,6 @@ class PlaybackController(
         _progress.value = PlayerProgress()
     }
 
-    /** Frees the ExoPlayer for good (app is finishing). */
     fun release() {
         stopCurrent(save = true)
         exoPlayer?.removeListener(listener)
@@ -475,7 +493,6 @@ class PlaybackController(
         }
     }
 
-    /** Refreshes position twice a second and saves resume progress about every 5 seconds. */
     private fun startTicker() {
         tickerJob?.cancel()
         tickerJob = scope.launch {
@@ -542,7 +559,6 @@ class PlaybackController(
         seekTo(exo.currentPosition + deltaMs)
     }
 
-    /** Jumps a live stream back to the live edge (used by the "Go Live" button). */
     fun seekToLive() {
         val exo = exoPlayer ?: return
         exo.seekToDefaultPosition()
@@ -563,24 +579,20 @@ class PlaybackController(
 
     fun setResizeFill(fill: Boolean) = _state.update { it.copy(resizeFill = fill) }
 
-    /** "Resume" in the continue prompt. */
     fun resume() {
         _state.update { it.copy(resumePrompt = null) }
         exoPlayer?.play()
     }
 
-    /** "Start Over" in the continue prompt. */
     fun startOver() {
         _state.update { it.copy(resumePrompt = null) }
         exoPlayer?.seekTo(0)
         exoPlayer?.play()
     }
 
-    /** Retry after an error: re-prepares the same item from the current position. */
     fun retry() {
         val exo = exoPlayer ?: return
         val req = _current.value ?: return
-        // A YouTube stream link can expire or fail outright: resolve it again from scratch.
         if (!req.isLocal && YouTubeResolver.isYouTubeUrl(req.source)) {
             saveProgress()
             _current.value = null
@@ -623,7 +635,6 @@ class PlaybackController(
         }
     }
 
-    /** Non-YouTube (regular HLS/MP4/live) quality override, keyed by ExoPlayer's own track group. */
     private fun selectRegularQuality(option: TrackOption) {
         val exo = exoPlayer ?: return
         val group = exo.currentTracks.groups.getOrNull(option.groupIndex) ?: return
@@ -652,7 +663,6 @@ class PlaybackController(
         updateParams { it.setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, option.trackIndex)) }
     }
 
-    /** Pass null to turn subtitles off. YouTube direct playback has no subtitle source yet. */
     fun selectText(option: TrackOption?) {
         if (yt != null && !isYtLive) return
         if (option == null) {
@@ -695,12 +705,10 @@ class PlaybackController(
             }
         }
 
-        // Several variants can share one height; keep the best bitrate per height, highest first.
         val qualities = videos.groupBy { it.height }
             .map { (_, list) -> list.maxByOrNull { it.bitrate }!! }
             .sortedByDescending { it.height }
 
-        // Apply the "Starting Quality" / Data Saver preference once, the first time real tracks appear.
         if (!qualityApplied && qualities.isNotEmpty()) {
             qualityApplied = true
             val idx = pickQualityIndex(qualities.map { it.height }, dataSaverSetting, preferredQuality)
@@ -732,7 +740,6 @@ class PlaybackController(
 
     // ---- Persistence & errors ----------------------------------------------------------
 
-    /** Saves the resume position. Uses the app scope so it still finishes when the screen closes. */
     fun saveProgress() {
         val req = _current.value ?: return
         val exo = exoPlayer ?: return
@@ -773,18 +780,17 @@ class PlaybackController(
         else -> HINT_GENERIC
     }
 
-    /** Index of the best match for the Starting Quality / Data Saver preference in a desc-sorted height list. */
     private fun pickQualityIndex(heightsDesc: List<Int>, dataSaver: Boolean, preferred: Int): Int {
         if (heightsDesc.isEmpty()) return 0
-        if (dataSaver) return heightsDesc.size - 1 // lowest
-        if (preferred == 0) return 0 // Auto = highest
+        if (dataSaver) return heightsDesc.size - 1
+        if (preferred == 0) return 0
         return heightsDesc.indices.minByOrNull { i -> kotlin.math.abs(heightsDesc[i] - preferred) } ?: 0
     }
 
     private companion object {
         const val TAG = "PlayVid"
         const val HINT_GENERIC = "Check the URL or your internet connection."
-        /** Marker groupIndex for TrackOptions that come from YouTube's own itag list, not ExoPlayer's track groups. */
+        const val DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         const val YT_MARKER = -1
     }
 }
