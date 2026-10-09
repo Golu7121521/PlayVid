@@ -1,18 +1,21 @@
 package com.playvid.presentation.server
 
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.playvid.PlayVidApp
 import com.playvid.domain.model.PlaybackRequest
+import com.playvid.domain.usecase.UrlValidation
+import kotlinx.coroutines.launch
 
 @Composable
 fun ServerScreen(
@@ -21,6 +24,11 @@ fun ServerScreen(
 ) {
     val links by viewModel.links.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+
+    // Context aur usecase extract karein taaki hum URL ko resolve kar sakein
+    val context = LocalContext.current
+    val validateUrl = remember { (context.applicationContext as PlayVidApp).container.validateUrl }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -48,13 +56,23 @@ fun ServerScreen(
                                 .fillMaxWidth()
                                 .padding(vertical = 8.dp)
                                 .clickable {
-                                    onPlay(
-                                        PlaybackRequest(
-                                            source = link.url,
-                                            title = link.title,
-                                            isLocal = false // Online video ke liye zaroori flag
-                                        )
-                                    )
+                                    // Click hone par pehle URL ko validate aur process karein
+                                    scope.launch {
+                                        when (val result = validateUrl(link.url)) {
+                                            is UrlValidation.Valid -> {
+                                                onPlay(
+                                                    PlaybackRequest(
+                                                        source = result.url, // Processed/Resolved link
+                                                        title = link.title,  // Backend se aaya naam
+                                                        isLocal = false
+                                                    )
+                                                )
+                                            }
+                                            is UrlValidation.Invalid -> {
+                                                Toast.makeText(context, "Invalid link: ${result.message}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
                                 },
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
