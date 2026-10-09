@@ -36,7 +36,7 @@ class ServerViewModel : ViewModel() {
             _isLoading.value = true
             try {
                 // Apna original Render API URL yahan dalein
-                val apiUrl = "https://aapka-render-app-url.onrender.com/api/links"
+                val apiUrl = "https://playvid-server.onrender.com/api/links"
                 val connection = URL(apiUrl).openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 5000
