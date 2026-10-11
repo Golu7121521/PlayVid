@@ -25,10 +25,9 @@ fun ServerScreen(
 ) {
     val links by viewModel.links.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val playingUrl by viewModel.playingUrl.collectAsState()
+    val processingUrl by viewModel.processingUrl.collectAsState()
 
     val context = LocalContext.current
-    // Validating logic directly from the App Container (Supports all links)
     val validateUrl = remember { (context.applicationContext as PlayVidApp).container.validateUrl }
 
     Scaffold(
@@ -58,20 +57,19 @@ fun ServerScreen(
                     contentPadding = PaddingValues(16.dp)
                 ) {
                     items(links) { link ->
-                        val isThisVideoLoading = playingUrl == link.url.trim()
-                        
+                        val isCurrentItemProcessing = processingUrl == link.url.trim()
+
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 8.dp)
-                                .clickable(enabled = !isThisVideoLoading && playingUrl == null) {
-                                    // Click hone par ViewModel ka playLink chalega
+                                .clickable(enabled = processingUrl == null) {
                                     viewModel.playLink(
                                         link = link,
                                         validateUrl = validateUrl,
                                         onValid = onPlay,
-                                        onInvalid = { errorMsg ->
-                                            Toast.makeText(context, "Invalid link: $errorMsg", Toast.LENGTH_SHORT).show()
+                                        onError = { errorMsg ->
+                                            Toast.makeText(context, errorMsg, Toast.LENGTH_SHORT).show()
                                         }
                                     )
                                 },
@@ -84,14 +82,21 @@ fun ServerScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(
-                                    text = link.title,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                
-                                // Jab video process ho raha hoga, card pe loader dikhega
-                                if (isThisVideoLoading) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = link.title,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    if (isCurrentItemProcessing && !link.url.contains(".m3u8")) {
+                                        Text(
+                                            text = "Extracting live stream...",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+
+                                if (isCurrentItemProcessing) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(24.dp),
                                         strokeWidth = 2.dp
