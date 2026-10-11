@@ -60,12 +60,8 @@ import org.schabi.newpipe.extractor.exceptions.AgeRestrictedContentException
 import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
 import java.io.IOException
-import java.security.SecureRandom
-import java.security.cert.X509Certificate
 import java.util.Locale
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
+import java.util.concurrent.TimeUnit
 
 /**
  * App-wide playback session. It owns the single ExoPlayer, so playback keeps going when
@@ -155,30 +151,6 @@ class PlaybackController(
         }
     }
 
-    /**
-     * Browser-compatible OkHttpClient creation (Relaxed SSL + Custom Headers support)
-     */
-    private fun createPermissiveOkHttpClient(): OkHttpClient {
-        val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
-            override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-            override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-        })
-
-        return try {
-            val sslContext = SSLContext.getInstance("SSL")
-            sslContext.init(null, trustAllCerts, SecureRandom())
-            httpClient.newBuilder()
-                .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
-                .hostnameVerifier { _, _ -> true }
-                .followRedirects(true)
-                .followSslRedirects(true)
-                .build()
-        } catch (e: Exception) {
-            httpClient
-        }
-    }
-
     private data class ParsedSource(
         val url: String,
         val clearKeyId: String? = null,
@@ -241,16 +213,40 @@ class PlaybackController(
     private fun ensurePlayer(): ExoPlayer {
         exoPlayer?.let { return it }
 
-        // Standard Desktop Chrome User-Agent jo direct streaming servers reject nahi karte
-        val okHttpClient = createPermissiveOkHttpClient()
-        val okHttp = OkHttpDataSource.Factory(okHttpClient)
-            .setUserAgent(DEFAULT_USER_AGENT)
+        // Standard Web Browser client configuration to bypass 403 Forbidden on Tokenized / M3U8 links
+        val streamingHttpClient = httpClient.newBuilder()
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .retryOnConnectionFailure(true)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .addInterceptor { chain ->
+                val original = chain.request()
+                val requestBuilder = original.newBuilder()
+                    .header("User-Agent", CHROME_USER_AGENT)
+                    .header("Accept", "*/*")
+                
+                // Add Origin/Referer automatically if missing for protected streams
+                if (original.header("Origin") == null) {
+                    requestBuilder.header("Origin", "${original.url.scheme}://${original.url.host}")
+                }
+                if (original.header("Referer") == null) {
+                    requestBuilder.header("Referer", "${original.url.scheme}://${original.url.host}/")
+                }
+                chain.proceed(requestBuilder.build())
+            }
+            .build()
+
+        val okHttp = OkHttpDataSource.Factory(streamingHttpClient)
+            .setUserAgent(CHROME_USER_AGENT)
 
         val factory = DefaultDataSource.Factory(context, okHttp)
         dataSourceFactory = factory
 
+        val mediaSourceFactory = DefaultMediaSourceFactory(factory)
+
         val created = ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
+            .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -328,11 +324,14 @@ class PlaybackController(
                 }
             }
 
-            val isHls = media?.liveHlsUrl != null ||
-                (media == null && req.source.lowercase().contains(".m3u8"))
             val parsedSource = if (media == null) parseSource(req.source) else null
-            val isDash = parsedSource != null && parsedSource.url.lowercase().contains(".mpd")
+            val sourceUrl = parsedSource?.url ?: req.source
             
+            // Check for HLS extensions or parameters (.m3u8, /playlist, etc.)
+            val isHls = media?.liveHlsUrl != null ||
+                (!req.isLocal && (sourceUrl.lowercase().contains(".m3u8") || sourceUrl.lowercase().contains("playlist")))
+            val isDash = parsedSource != null && sourceUrl.lowercase().contains(".mpd")
+
             if (media == null) {
                 _state.update {
                     it.copy(
@@ -353,7 +352,7 @@ class PlaybackController(
             }
 
             val item = MediaItem.Builder()
-                .setUri(media?.liveHlsUrl ?: media?.muxedUrl ?: parsedSource?.url ?: req.source)
+                .setUri(media?.liveHlsUrl ?: media?.muxedUrl ?: sourceUrl)
                 .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build())
                 .apply {
                     if (isHls) setMimeType(MimeTypes.APPLICATION_M3U8)
@@ -365,23 +364,17 @@ class PlaybackController(
 
             if (media != null && media.videos.isNotEmpty() && media.audios.isNotEmpty()) {
                 setYtSource(media.videos[ytVideoIndex].url, media.audios[0].url, resumeAt)
-            } else if (parsedSource != null) {
-                // Request headers setup
-                val headers = mutableMapOf<String, String>()
-                headers.putAll(parsedSource.headers)
-                if (!headers.containsKey("User-Agent")) {
-                    headers["User-Agent"] = DEFAULT_USER_AGENT
+            } else {
+                val dsf: DataSource.Factory = if (parsedSource != null && parsedSource.headers.isNotEmpty()) {
+                    OkHttpDataSource.Factory(httpClient.newBuilder().followRedirects(true).build())
+                        .setUserAgent(parsedSource.headers["User-Agent"] ?: CHROME_USER_AGENT)
+                        .setDefaultRequestProperties(parsedSource.headers)
+                } else {
+                    dataSourceFactory ?: DefaultDataSource.Factory(context)
                 }
 
-                val okHttpClient = createPermissiveOkHttpClient()
-                val okHttpFactory = OkHttpDataSource.Factory(okHttpClient)
-                    .setUserAgent(headers["User-Agent"] ?: DEFAULT_USER_AGENT)
-                    .setDefaultRequestProperties(headers)
-
-                val dsf = DefaultDataSource.Factory(context, okHttpFactory)
-                val keyId = parsedSource.clearKeyId
-                val keyValue = parsedSource.clearKeyValue
-
+                val keyId = parsedSource?.clearKeyId
+                val keyValue = parsedSource?.clearKeyValue
                 val source = when {
                     isDash -> {
                         val factory = DashMediaSource.Factory(dsf)
@@ -392,7 +385,7 @@ class PlaybackController(
                         factory.createMediaSource(item)
                     }
                     isHls -> {
-                        // HLS stream ke liye direct HlsMediaSource create karein
+                        // Allow chunkless preparation to avoid infinite buffer on dynamic playlists
                         HlsMediaSource.Factory(dsf)
                             .setAllowChunklessPreparation(true)
                             .createMediaSource(item)
@@ -400,10 +393,7 @@ class PlaybackController(
                     else -> DefaultMediaSourceFactory(dsf).createMediaSource(item)
                 }
                 exo.setMediaSource(source, resumeAt)
-            } else {
-                exo.setMediaItem(item, resumeAt)
             }
-
             exo.prepare()
             exo.playWhenReady = !canResume
             startTicker()
@@ -790,7 +780,8 @@ class PlaybackController(
     private companion object {
         const val TAG = "PlayVid"
         const val HINT_GENERIC = "Check the URL or your internet connection."
-        const val DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         const val YT_MARKER = -1
+        // Browser standard desktop User-Agent to bypass streaming server blocks
+        const val CHROME_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
 }
