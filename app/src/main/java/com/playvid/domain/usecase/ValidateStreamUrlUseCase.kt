@@ -58,7 +58,8 @@ class ValidateStreamUrlUseCase {
     }
 
     private companion object {
-        const val MAX_LENGTH = 2048
+        // Signed CDN / tokenized links are often well over 2 KB; anything longer than this is not a real link.
+        const val MAX_LENGTH = 8192
         val INVALID = UrlValidation.Invalid("Please enter a valid video URL")
         val UNSUPPORTED = UrlValidation.Invalid("Unsupported video format")
         val BLOCKED_EXTENSIONS = setOf(

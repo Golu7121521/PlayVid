@@ -4,12 +4,15 @@ import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -85,9 +88,32 @@ object DownloadRepository {
 
     suspend fun listCompleted(context: Context): List<CompletedItem> = withContext(Dispatchers.IO) {
         val items = mutableListOf<CompletedItem>()
-        items += queryCollection(context, MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "Movies/PlayVid", DownloadKind.VIDEO)
-        items += queryCollection(context, MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, "Music/PlayVid", DownloadKind.AUDIO)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            items += queryCollection(context, MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "Movies/PlayVid", DownloadKind.VIDEO)
+            items += queryCollection(context, MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, "Music/PlayVid", DownloadKind.AUDIO)
+        } else {
+            items += listLegacyFolder(context, Environment.DIRECTORY_MOVIES, DownloadKind.VIDEO)
+            items += listLegacyFolder(context, Environment.DIRECTORY_MUSIC, DownloadKind.AUDIO)
+        }
         items.sortedByDescending { it.dateAddedSec }
+    }
+
+    /** Android 9 and below: there is no MediaStore RELATIVE_PATH to filter on, so list the PlayVid folder itself. */
+    @Suppress("DEPRECATION")
+    private fun listLegacyFolder(context: Context, publicDir: String, kind: DownloadKind): List<CompletedItem> {
+        val dir = File(Environment.getExternalStoragePublicDirectory(publicDir), "PlayVid")
+        val files = dir.listFiles { f -> f.isFile } ?: return emptyList()
+        return files.mapNotNull { f ->
+            runCatching {
+                CompletedItem(
+                    uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", f).toString(),
+                    name = f.name,
+                    kind = kind,
+                    sizeBytes = f.length(),
+                    dateAddedSec = f.lastModified() / 1000
+                )
+            }.getOrNull()
+        }
     }
 
     private fun queryCollection(context: Context, collection: Uri, relativePathPrefix: String, kind: DownloadKind): List<CompletedItem> {

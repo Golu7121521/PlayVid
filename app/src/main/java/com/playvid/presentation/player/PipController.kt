@@ -3,6 +3,7 @@ package com.playvid.presentation.player
 import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Rational
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -24,8 +25,11 @@ class PipController(private val activity: Activity) {
     /** True while the activity is shown in the small PiP window. */
     var inPip by mutableStateOf(false)
 
+    // PictureInPictureParams only exists from Android 8.0; on Android 7.x the PiP feature can be
+    // present while those classes are not, so PiP is only offered from API 26 up.
     val isSupported: Boolean =
-        activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
 
     fun enter() {
         if (!isSupported) return

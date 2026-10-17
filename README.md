@@ -1,7 +1,7 @@
 # PlayVid 2.1 (minimal UI)
 
 Android video player for **M3U8/HLS**, **MP4/direct URLs** and **local files**.
-Kotlin + Jetpack Compose + Media3 (ExoPlayer). Package: `com.playvid`. minSdk 26, targetSdk 35.
+Kotlin + Jetpack Compose + Media3 (ExoPlayer). Package: `com.playvid`. minSdk 21 (Android 5.0), targetSdk 35.
 
 ## Build with GitHub Actions
 1. Create a new GitHub repo and upload the *contents* of this folder (keep `.github/workflows/build.yml` at the repo root).

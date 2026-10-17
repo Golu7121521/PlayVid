@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -175,5 +176,16 @@ private fun LocalVideoRow(video: LocalVideo, onClick: () -> Unit) {
         Formatter.formatShortFileSize(context, video.sizeBytes),
         video.durationMs.takeIf { it > 0 }?.let { formatTime(it) }
     ).joinToString(" \u2022 ")
-    VideoRow(title = video.name, details = details, progress = 0f, onClick = onClick)
+    VideoRow(
+        title = video.name,
+        details = details,
+        progress = 0f,
+        onClick = onClick,
+        leading = {
+            VideoThumbnail(
+                uri = video.uri,
+                modifier = Modifier.width(112.dp).height(63.dp)
+            )
+        }
+    )
 }

@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Needed so the release step below can create a GitHub Release and upload the APKs to it.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,6 +28,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
+
+      # Read the app version from build.gradle.kts (e.g. "3.7.0") to name the release tag v3.7.0.
+      - name: Read app version
+        id: version
+        run: |
+          VERSION=$(grep -m1 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "name=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "App version: $VERSION"
 
       # Debug APKs skip minification/resource-shrinking entirely and bundle every CPU
       # architecture's native libraries into one file, so they're far bigger than what actually
@@ -61,3 +73,15 @@ jobs:
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
+
+      # Last step, so the APKs it uploads are the signed ones when a keystore is configured.
+      # Pull requests don't publish releases.
+      - name: Publish APKs to GitHub Releases
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.name }}
+          name: PlayVid ${{ steps.version.outputs.name }}
+          files: app/build/outputs/apk/release/*.apk
+          generate_release_notes: true
+          fail_on_unmatched_files: true

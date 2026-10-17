@@ -32,6 +32,7 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
         val holdSpeedMultiplier = intPreferencesKey("hold_speed_multiplier")
         val pipEnabled = booleanPreferencesKey("pip_enabled")
         val backgroundPlayback = booleanPreferencesKey("background_playback")
+        val headphoneButtonControl = booleanPreferencesKey("headphone_button_control")
     }
 
     override val settings: Flow<AppSettings> = context.dataStore.data
@@ -51,6 +52,7 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
             prefs[Keys.holdSpeedMultiplier] = new.holdSpeedMultiplier
             prefs[Keys.pipEnabled] = new.pipEnabled
             prefs[Keys.backgroundPlayback] = new.backgroundPlayback
+            prefs[Keys.headphoneButtonControl] = new.headphoneButtonControl
         }
     }
 
@@ -67,7 +69,8 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
             holdSpeedGesture = this[Keys.holdSpeedGesture] ?: d.holdSpeedGesture,
             holdSpeedMultiplier = this[Keys.holdSpeedMultiplier] ?: d.holdSpeedMultiplier,
             pipEnabled = this[Keys.pipEnabled] ?: d.pipEnabled,
-            backgroundPlayback = this[Keys.backgroundPlayback] ?: d.backgroundPlayback
+            backgroundPlayback = this[Keys.backgroundPlayback] ?: d.backgroundPlayback,
+            headphoneButtonControl = this[Keys.headphoneButtonControl] ?: d.headphoneButtonControl
         )
     }
 }

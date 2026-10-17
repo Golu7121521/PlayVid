@@ -11,10 +11,13 @@ android {
 
     defaultConfig {
         applicationId = "com.playvid"
-        minSdk = 26            // Adaptive icons + Picture-in-Picture available on every supported device
+        // Android 5.0+ (covers ~99% of active devices). Everything newer-only is guarded by SDK_INT checks:
+        // adaptive icon (API 26) has PNG fallbacks, Picture-in-Picture (API 26) is gated, notification
+        // channels (API 26) and scoped storage (API 29) already had guards.
+        minSdk = 21
         targetSdk = 35
-        versionCode = 40
-        versionName = "3.6.0"
+        versionCode = 41
+        versionName = "3.7.0"
         // UI strings are English-only; this drops every other language's strings that the
         // libraries (AndroidX, Media3, ...) otherwise bundle for their own internal UI bits.
         resourceConfigurations += setOf("en")
@@ -107,5 +110,6 @@ dependencies {
 
     // YouTube link support (personal use): resolves a youtube.com / youtu.be link to a playable stream.
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
+    // Full desugaring (not the _nio subset): needed for java.time / java.nio APIs on minSdk 21-25.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }

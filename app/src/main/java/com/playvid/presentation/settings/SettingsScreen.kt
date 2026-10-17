@@ -106,6 +106,9 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel(factory = AppViewModelProvi
         }
         SwitchRow("Picture-in-Picture (auto on leaving app)", s.pipEnabled) { v -> vm.update { it.copy(pipEnabled = v) } }
         SwitchRow("Keep Playing in Background (after back)", s.backgroundPlayback) { v -> vm.update { it.copy(backgroundPlayback = v) } }
+        SwitchRow("Headphone Button Control (1x play/pause, 2x +10s, 3x -10s)", s.headphoneButtonControl) { v ->
+            vm.update { it.copy(headphoneButtonControl = v) }
+        }
 
         Section("Appearance")
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 4.dp)) {
