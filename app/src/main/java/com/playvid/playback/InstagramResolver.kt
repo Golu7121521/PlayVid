@@ -4,28 +4,26 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
+import java.io.IOException // <- Yeh import zaroori hai
+import java.net.URLEncoder
 
 class InstagramResolver(private val httpClient: OkHttpClient) {
 
     suspend fun resolve(instagramUrl: String): String = withContext(Dispatchers.IO) {
-        // Yahan apna backend URL daalein (Jaise Render/Railway ya local IP ka URL)
-        val backendUrl = "https://your-backend-service.onrender.com/download?url=${java.net.URLEncoder.encode(instagramUrl, "UTF-8")}"
-        
+        // Yahan apna backend URL daalein jahan aapne Flask app deploy kiya hai
+        val backendBaseUrl = "https://YOUR_BACKEND_URL_HERE/download"
+        val encodedUrl = URLEncoder.encode(instagramUrl, "UTF-8")
+        val targetUrl = "$backendBaseUrl?url=$encodedUrl"
+
         val request = Request.Builder()
-            .url(backendUrl)
+            .url(targetUrl)
             .get()
             .build()
 
         httpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("Failed to resolve Instagram link: ${response.code}")
+                throw IOException("Failed to resolve Instagram link: HTTP ${response.code}")
             }
-            val bodyString = response.body?.string() ?: throw IOException("Empty response from backend")
-            
-            // Agar backend direct file stream bhej raha hai ya JSON bhej raha hai, 
-            // aapke Flask backend ke anusaar agar direct video stream bhej raha hai toh response.request.url.toString() use kar sakte hain
-            // Ya agar koi redirect URL milta hai:
             response.request.url.toString()
         }
     }
