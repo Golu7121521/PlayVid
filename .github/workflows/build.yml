@@ -6,16 +6,16 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Needed so the release step below can create a GitHub Release and upload the APKs to it.
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Releases mein upload karne ke liye permissions zaroori hain
+    permissions:
+      contents: write
+
     env:
-      # true only when the keystore secret has been added to the repo
       HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -24,31 +24,12 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      # Installs Gradle itself, so no gradle-wrapper.jar is required in the repo
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
 
-      # Read the app version from build.gradle.kts (e.g. "3.7.0") to name the release tag v3.7.0.
-      - name: Read app version
-        id: version
-        run: |
-          VERSION=$(grep -m1 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')
-          echo "name=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "App version: $VERSION"
-
-      # Debug APKs skip minification/resource-shrinking entirely and bundle every CPU
-      # architecture's native libraries into one file, so they're far bigger than what actually
-      # ships. This release build applies both (and the 4 per-architecture splits below) even
-      # without a signing key — the resulting APKs just aren't signed for the Play Store yet.
       - name: Build release APKs (armeabi-v7a, arm64-v8a, x86, x86_64)
         run: gradle assembleRelease --stacktrace
-
-      - name: Upload release APKs
-        uses: actions/upload-artifact@v4
-        with:
-          name: PlayVid-release
-          path: app/build/outputs/apk/release/*.apk
 
       - name: Decode keystore
         if: env.HAS_KEYSTORE == 'true'
@@ -65,23 +46,16 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle assembleRelease bundleRelease --stacktrace
 
-      - name: Upload signed release files
-        if: env.HAS_KEYSTORE == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: PlayVid-release-signed
-          path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
-
-      # Last step, so the APKs it uploads are the signed ones when a keystore is configured.
-      # Pull requests don't publish releases.
-      - name: Publish APKs to GitHub Releases
-        if: github.event_name != 'pull_request'
+      # --- GitHub Releases Upload ---
+      - name: Create Release and Upload Files
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.name }}
-          name: PlayVid ${{ steps.version.outputs.name }}
-          files: app/build/outputs/apk/release/*.apk
-          generate_release_notes: true
-          fail_on_unmatched_files: true
+          # Har push/build ke sath tag update karne ke liye ya unique tag banane ke liye
+          tag_name: v1.0.${{ github.run_number }}
+          name: "PlayVid Release v1.0.${{ github.run_number }}"
+          body: "Automated build from GitHub Actions for commit ${{ github.sha }}"
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

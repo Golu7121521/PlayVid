@@ -62,7 +62,7 @@ fun HomeScreen(
                 value = ui.input,
                 onValueChange = vm::onInputChange,
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Paste video URL") },
+                placeholder = { Text("Paste video or Instagram URL") },
                 singleLine = true,
                 isError = ui.error != null,
                 supportingText = { ui.error?.let { Text(it) } },
@@ -87,7 +87,7 @@ fun HomeScreen(
             }
 
             Text(
-                "Supports M3U8, MP4 and direct video links",
+                "Supports M3U8, MP4, YouTube and Instagram links",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 10.dp)

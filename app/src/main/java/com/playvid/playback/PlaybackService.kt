@@ -6,7 +6,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
-import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.media.app.NotificationCompat.MediaStyle
@@ -63,10 +62,7 @@ class PlaybackService : MediaSessionService() {
 
         val player = (application as PlayVidApp).container.playback.player
         if (!player.playWhenReady) {
-            // Nothing to keep alive for. Started with startForegroundService() just as playback
-            // paused, so this still has to call startForeground() first: Android 8+ kills the app
-            // if a foreground service is stopped without ever going foreground.
-            startForegroundWith(buildNotification())
+            // Nothing to keep alive for; bail out before even building a session/notification.
             stopSelf()
             return
         }
@@ -75,15 +71,9 @@ class PlaybackService : MediaSessionService() {
         val contentIntent = PendingIntent.getActivity(
             this, 0, sessionIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        mediaSession = MediaSession.Builder(this, player)
-            .setSessionActivity(contentIntent)
-            .setCallback(headsetCallback)
-            .build()
+        mediaSession = MediaSession.Builder(this, player).setSessionActivity(contentIntent).build()
 
-        startForegroundWith(buildNotification())
-    }
-
-    private fun startForegroundWith(notification: Notification) {
+        val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ServiceCompat.startForeground(
                 this, NOTIFICATION_ID, notification,
@@ -93,30 +83,6 @@ class PlaybackService : MediaSessionService() {
             startForeground(NOTIFICATION_ID, notification)
         }
     }
-
-    /** Earphone button while the app is in the background (this session is then the one receiving it). */
-    private val headsetCallback = object : MediaSession.Callback {
-        override fun onMediaButtonEvent(
-            session: MediaSession,
-            controllerInfo: MediaSession.ControllerInfo,
-            intent: Intent
-        ): Boolean {
-            val event = intent.keyEventExtra() ?: return false
-            if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0 || event.keyCode !in HEADSET_KEY_CODES) {
-                return false
-            }
-            // false = not handled here, so the session falls back to its normal play/pause.
-            return (application as PlayVidApp).container.playback.onHeadsetButtonPress()
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun Intent.keyEventExtra(): KeyEvent? =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
-        } else {
-            getParcelableExtra(Intent.EXTRA_KEY_EVENT) as? KeyEvent
-        }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {

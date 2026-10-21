@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
-import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -30,10 +29,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.playvid.domain.model.AppSettings
 import com.playvid.domain.model.ThemeMode
-import com.playvid.playback.HEADSET_KEY_CODES
 import com.playvid.playback.PlaybackService
 import com.playvid.presentation.navigation.PlayVidNavHost
-import com.playvid.presentation.splash.SplashGate
 import com.playvid.presentation.player.LocalPipController
 import com.playvid.presentation.player.PipController
 import com.playvid.presentation.theme.PlayVidTheme
@@ -76,12 +73,6 @@ class MainActivity : ComponentActivity() {
             // Android 12 and below requires READ_EXTERNAL_STORAGE (Important for Android 10)
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
                 permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            }
-            // Android 9 and below also need WRITE_EXTERNAL_STORAGE to save downloads (no scoped storage yet).
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
-                ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
-            ) {
-                permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             }
         }
 
@@ -133,9 +124,7 @@ class MainActivity : ComponentActivity() {
             CompositionLocalProvider(LocalPipController provides pip) {
                 PlayVidTheme(darkTheme = dark) {
                     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        SplashGate {
-                            PlayVidNavHost(sharedText = sharedText, onSharedTextConsumed = { sharedText = null })
-                        }
+                        PlayVidNavHost(sharedText = sharedText, onSharedTextConsumed = { sharedText = null })
                     }
                 }
             }
@@ -153,19 +142,6 @@ class MainActivity : ComponentActivity() {
         if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
             intent.getStringExtra(Intent.EXTRA_TEXT)?.let { sharedText = it }
         }
-    }
-
-    /**
-     * Earphone button while the app is in the foreground (no media session is running then, so the
-     * key event comes here). Presses are handled by PlaybackController when the feature is on.
-     */
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
-            event.keyCode in HEADSET_KEY_CODES && playback.onHeadsetButtonPress()
-        ) {
-            return true
-        }
-        return super.dispatchKeyEvent(event)
     }
 
     /** Home button / app switch while a video is on screen: keep playing in a PiP window. */

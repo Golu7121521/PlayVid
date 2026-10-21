@@ -18,7 +18,6 @@ import android.os.Environment
 import android.os.IBinder
 import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
-import androidx.core.content.FileProvider
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
@@ -194,12 +193,6 @@ class DownloadService : Service() {
                         }
                         out.write(bytes)
                         start += bytes.size
-                        if (response.code == 200) {
-                            // The server ignored the Range header and sent the whole file in one go.
-                            // Re-requesting ranges would just download it again forever.
-                            total = start
-                            return@use
-                        }
                         if (total < 0 && bytes.size.toLong() < chunkSize) total = start // server ignored Range: this was everything
 
                         val now = System.currentTimeMillis()
@@ -321,8 +314,7 @@ class DownloadService : Service() {
 
                 val progressJob = scope.launch {
                     val holder = ProgressHolder()
-                    // Stops as soon as the transformer finishes (cont resumed) or the download is canceled.
-                    while (isActive && cont.isActive) {
+                    while (isActive) {
                         if (control.canceled.get()) {
                             transformer.cancel()
                             if (cont.isActive) cont.resumeWithException(CancellationException("canceled"))
@@ -380,15 +372,8 @@ class DownloadService : Service() {
         val outFile = File(dir, fileName)
         file.inputStream().use { input -> outFile.outputStream().use { input.copyTo(it) } }
         MediaScannerConnection.scanFile(this, arrayOf(outFile.absolutePath), null, null)
-        return legacyFileUri(outFile)
+        return Uri.fromFile(outFile)
     }
-
-    /**
-     * On Android 9 and below a plain file:// Uri can't be passed to another app (FileUriExposedException
-     * on Android 7+), so share it through PlayVid's FileProvider instead.
-     */
-    private fun legacyFileUri(file: File): Uri =
-        FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
 
     private fun saveAudioFile(title: String, file: File): Uri {
         val safeName = title.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().take(80).ifBlank { "audio" }
@@ -422,7 +407,7 @@ class DownloadService : Service() {
         val outFile = File(dir, fileName)
         file.inputStream().use { input -> outFile.outputStream().use { input.copyTo(it) } }
         MediaScannerConnection.scanFile(this, arrayOf(outFile.absolutePath), null, null)
-        return legacyFileUri(outFile)
+        return Uri.fromFile(outFile)
     }
 
     // ---- Notifications ------------------------------------------------------------------

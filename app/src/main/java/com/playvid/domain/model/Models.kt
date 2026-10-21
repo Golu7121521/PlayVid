@@ -60,7 +60,5 @@ data class AppSettings(
      *  in the player controls always works regardless of this setting. */
     val pipEnabled: Boolean = true,
     /** Keep playing (audio/video, in the mini player) after pressing back out of the full player. */
-    val backgroundPlayback: Boolean = true,
-    /** Earphone button: 1 press = play/pause, 2 presses = +10 s, 3 presses = -10 s. */
-    val headphoneButtonControl: Boolean = true
+    val backgroundPlayback: Boolean = true
 )

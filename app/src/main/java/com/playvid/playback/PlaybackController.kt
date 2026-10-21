@@ -2,10 +2,7 @@ package com.playvid.playback
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
-import android.view.KeyEvent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Format
@@ -21,11 +18,8 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
-import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.drm.DefaultDrmSessionManager
 import androidx.media3.exoplayer.drm.DrmSessionManager
@@ -69,18 +63,6 @@ import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-/** Earphone / headset media-button key codes that drive the headphone button control. */
-val HEADSET_KEY_CODES: Set<Int> = setOf(
-    KeyEvent.KEYCODE_HEADSETHOOK,
-    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-    KeyEvent.KEYCODE_MEDIA_PLAY,
-    KeyEvent.KEYCODE_MEDIA_PAUSE
-)
-
-private const val HEADSET_SEEK_MS = 10_000L
-/** How long to wait for another press before acting on the presses so far (1, 2 or 3+). */
-private const val HEADSET_MULTI_PRESS_WINDOW_MS = 400L
-
 /**
  * App-wide playback session. It owns the single ExoPlayer, so playback keeps going when
  * the player screen is left (the mini player then controls it) and the UI never touches
@@ -96,6 +78,7 @@ class PlaybackController(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val isDebuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
     private val youtube = YouTubeResolver(httpClient)
+    private val instagramResolver = InstagramResolver(httpClient)
 
     private var exoPlayer: ExoPlayer? = null
     private var dataSourceFactory: DataSource.Factory? = null
@@ -167,39 +150,6 @@ class PlaybackController(
                 it.copy(error = hintFor(error) + detail, isLoading = false, isBuffering = false, isPlaying = false)
             }
         }
-    }
-
-    // ---- Headphone button control -------------------------------------------------------
-    // Cached from Settings so the key-event path (which must answer instantly) never waits on DataStore.
-    @Volatile private var headphoneButtonControl = false
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var headsetPresses = 0
-    private val headsetPressFlush = Runnable {
-        val presses = headsetPresses
-        headsetPresses = 0
-        when (presses) {
-            1 -> togglePlay()
-            2 -> seekBy(HEADSET_SEEK_MS)
-            else -> seekBy(-HEADSET_SEEK_MS) // 3 or more presses
-        }
-    }
-
-    init {
-        scope.launch { settingsRepo.settings.collect { headphoneButtonControl = it.headphoneButtonControl } }
-    }
-
-    /**
-     * One earphone-button press. Presses are counted for a short window: 1 = play/pause,
-     * 2 = skip forward 10 s, 3 = back 10 s. Returns true when PlayVid handled the press (feature
-     * on and something loaded), false to let the system do its normal media-key handling.
-     * Must be called on the main thread.
-     */
-    fun onHeadsetButtonPress(): Boolean {
-        if (!headphoneButtonControl || _current.value == null) return false
-        headsetPresses++
-        mainHandler.removeCallbacks(headsetPressFlush)
-        mainHandler.postDelayed(headsetPressFlush, HEADSET_MULTI_PRESS_WINDOW_MS)
-        return true
     }
 
     private data class ParsedSource(
@@ -296,25 +246,8 @@ class PlaybackController(
 
         val mediaSourceFactory = DefaultMediaSourceFactory(factory)
 
-        // Older devices: if the hardware decoder fails for a stream, fall back to a software one
-        // instead of showing an error.
-        val renderersFactory = DefaultRenderersFactory(context).setEnableDecoderFallback(true)
-        // Smaller "enough buffered to start" thresholds: after a seek (or a stall) playback resumes
-        // after ~1 s of data instead of waiting for the 2.5 s / 5 s defaults, which is what made the
-        // picture look frozen for a while after seeking.
-        val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                /* minBufferMs = */ 15_000,
-                /* maxBufferMs = */ 50_000,
-                /* bufferForPlaybackMs = */ 1_000,
-                /* bufferForPlaybackAfterRebufferMs = */ 2_000
-            )
-            .build()
-
-        val created = ExoPlayer.Builder(context, renderersFactory)
+        val created = ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSourceFactory)
-            .setLoadControl(loadControl)
-            .setSeekParameters(SeekParameters.CLOSEST_SYNC)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -360,6 +293,23 @@ class PlaybackController(
             if (_current.value?.source != req.source) return@launch
 
             var title = req.title
+            var resolvedSource = req.source
+
+            // Handle Instagram Links via Backend Resolver
+            if (!req.isLocal && InstagramResolver.isInstagramUrl(req.source)) {
+                try {
+                    resolvedSource = withContext(Dispatchers.IO) { instagramResolver.resolve(req.source) }
+                    title = "Instagram Reel"
+                } catch (e: Exception) {
+                    if (isDebuggable) Log.w(TAG, "Instagram resolve failed", e)
+                    if (_current.value?.source == req.source) {
+                        _state.update { it.copy(error = "Instagram reel download nahi ho paya", isLoading = false, isBuffering = false) }
+                    }
+                    return@launch
+                }
+                if (_current.value?.source != req.source) return@launch
+            }
+
             var media: YouTubeMedia? = null
             if (!req.isLocal && YouTubeResolver.isYouTubeUrl(req.source)) {
                 media = try {
@@ -392,13 +342,12 @@ class PlaybackController(
                 }
             }
 
-            val parsedSource = if (media == null) parseSource(req.source) else null
-            val sourceUrl = parsedSource?.url ?: req.source
+            val parsedSource = if (media == null) parseSource(resolvedSource) else null
+            val sourceUrl = parsedSource?.url ?: resolvedSource
             
-            // HLS is detected only from a .m3u8 in the URL. (A bare "playlist" word in the path or
-            // query used to force HLS, which broke plain MP4 links such as /playlists/clip.mp4.)
+            // Check for HLS extensions or parameters (.m3u8, /playlist, etc.)
             val isHls = media?.liveHlsUrl != null ||
-                (!req.isLocal && sourceUrl.lowercase().contains(".m3u8"))
+                (!req.isLocal && (sourceUrl.lowercase().contains(".m3u8") || sourceUrl.lowercase().contains("playlist")))
             val isDash = parsedSource != null && sourceUrl.lowercase().contains(".mpd")
 
             if (media == null) {
@@ -468,9 +417,7 @@ class PlaybackController(
             startTicker()
 
             if (saved == null) _messages.tryEmit("Video added to history")
-            // Save the position we already had, not resumeAt: with "Resume Playback" off resumeAt is 0,
-            // and writing that here used to wipe the saved position as soon as a video was opened.
-            history.saveProgress(req.source, title, req.isLocal, saved?.positionMs ?: 0L, saved?.durationMs ?: 0L)
+            history.saveProgress(req.source, title, req.isLocal, resumeAt, saved?.durationMs ?: 0L)
         }
     }
 
@@ -611,10 +558,7 @@ class PlaybackController(
     fun seekTo(positionMs: Long) {
         val exo = exoPlayer ?: return
         val duration = _progress.value.durationMs
-        val target = if (duration > 0) positionMs.coerceIn(0L, duration) else positionMs.coerceAtLeast(0L)
-        exo.seekTo(target)
-        // Show the target position right away instead of waiting for the next 500 ms tick.
-        _progress.update { it.copy(positionMs = target) }
+        exo.seekTo(if (duration > 0) positionMs.coerceIn(0L, duration) else positionMs.coerceAtLeast(0L))
         syncState()
     }
 

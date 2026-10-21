@@ -18,6 +18,15 @@ class ValidateStreamUrlUseCase {
         val url = raw.trim()
         if (url.isEmpty() || url.length > MAX_LENGTH || url.any { it.isWhitespace() }) return INVALID
 
+        // Instagram URL check
+        if (isInstagramUrl(url)) {
+            return UrlValidation.Valid(
+                url = url,
+                isHls = false,
+                title = "Instagram Reel"
+            )
+        }
+
         // A `|drmScheme=...&drmLicense=keyId:key` suffix (ClearKey DASH links) isn't valid URI
         // syntax on its own, so only the manifest URL before it is checked; the full string
         // (DRM part included) is still what gets played.
@@ -40,9 +49,6 @@ class ValidateStreamUrlUseCase {
         val extension = fileName.substringAfterLast('.', "").lowercase()
         val hasExtension = extension.length in 1..5 && extension.all { it.isLetterOrDigit() }
         // Reject only extensions that are clearly not video (images, documents, archives, ...).
-        // Proxy/relay links (e.g. stream_proxy.php?url=...m3u8...) have a script extension on the
-        // outer URL with the real media type buried in a query param, so those must stay allowed;
-        // the real type is sniffed from the response while loading either way.
         if (hasExtension && extension in BLOCKED_EXTENSIONS) return UNSUPPORTED
 
         return UrlValidation.Valid(
@@ -57,9 +63,16 @@ class ValidateStreamUrlUseCase {
         return h == "youtu.be" || h == "youtube.com" || h.endsWith(".youtube.com")
     }
 
+    private fun isInstagramUrl(url: String): Boolean {
+        val lower = url.lowercase()
+        return lower.contains("instagram.com/reel/") || 
+               lower.contains("instagram.com/reels/") || 
+               lower.contains("instagram.com/p/") || 
+               lower.contains("instagram.com/tv/")
+    }
+
     private companion object {
-        // Signed CDN / tokenized links are often well over 2 KB; anything longer than this is not a real link.
-        const val MAX_LENGTH = 8192
+        const val MAX_LENGTH = 2048
         val INVALID = UrlValidation.Invalid("Please enter a valid video URL")
         val UNSUPPORTED = UrlValidation.Invalid("Unsupported video format")
         val BLOCKED_EXTENSIONS = setOf(
