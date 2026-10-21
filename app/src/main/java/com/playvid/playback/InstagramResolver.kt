@@ -11,7 +11,8 @@ class InstagramResolver(private val httpClient: OkHttpClient) {
 
     suspend fun resolve(instagramUrl: String): String = withContext(Dispatchers.IO) {
         // Yahan apna backend URL daalein jahan aapne Flask app deploy kiya hai
-        val backendBaseUrl = "https://insta-api-6dps.onrender.com/"
+        val backendBaseUrl = "https://insta-api-6dps.onrender.com/download"
+
         val encodedUrl = URLEncoder.encode(instagramUrl, "UTF-8")
         val targetUrl = "$backendBaseUrl?url=$encodedUrl"
 
