@@ -18,15 +18,6 @@ class ValidateStreamUrlUseCase {
         val url = raw.trim()
         if (url.isEmpty() || url.length > MAX_LENGTH || url.any { it.isWhitespace() }) return INVALID
 
-        // Instagram URL check
-        if (isInstagramUrl(url)) {
-            return UrlValidation.Valid(
-                url = url,
-                isHls = false,
-                title = "Instagram Reel"
-            )
-        }
-
         // A `|drmScheme=...&drmLicense=keyId:key` suffix (ClearKey DASH links) isn't valid URI
         // syntax on its own, so only the manifest URL before it is checked; the full string
         // (DRM part included) is still what gets played.
@@ -49,26 +40,21 @@ class ValidateStreamUrlUseCase {
         val extension = fileName.substringAfterLast('.', "").lowercase()
         val hasExtension = extension.length in 1..5 && extension.all { it.isLetterOrDigit() }
         // Reject only extensions that are clearly not video (images, documents, archives, ...).
+        // Proxy/relay links (e.g. stream_proxy.php?url=...m3u8...) have a script extension on the
+        // outer URL with the real media type buried in a query param, so those must stay allowed;
+        // the real type is sniffed from the response while loading either way.
         if (hasExtension && extension in BLOCKED_EXTENSIONS) return UNSUPPORTED
 
         return UrlValidation.Valid(
             url = url,
             isHls = url.lowercase().contains(".m3u8"),
-            title = if (isYouTubeHost(uri.host)) "YouTube video" else fileName.takeIf { it.isNotBlank() } ?: uri.host
+            title = if (isYouTubeHost(uri.host)) "YouTube video" else if (uri.host.lowercase().contains("instagram.com")) "Instagram Reel" else fileName.takeIf { it.isNotBlank() } ?: uri.host
         )
     }
 
     private fun isYouTubeHost(host: String): Boolean {
         val h = host.lowercase()
         return h == "youtu.be" || h == "youtube.com" || h.endsWith(".youtube.com")
-    }
-
-    private fun isInstagramUrl(url: String): Boolean {
-        val lower = url.lowercase()
-        return lower.contains("instagram.com/reel/") || 
-               lower.contains("instagram.com/reels/") || 
-               lower.contains("instagram.com/p/") || 
-               lower.contains("instagram.com/tv/")
     }
 
     private companion object {

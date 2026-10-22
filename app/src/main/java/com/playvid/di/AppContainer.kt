@@ -24,6 +24,7 @@ class AppContainer(context: Context) {
 
     private val appContext = context.applicationContext
 
+    /** Outlives ViewModels; used to persist playback progress when the player closes. */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val database: AppDatabase =
@@ -37,6 +38,11 @@ class AppContainer(context: Context) {
     val settingsRepository: SettingsRepository = SettingsRepositoryImpl(appContext)
     val validateUrl = ValidateStreamUrlUseCase()
 
+    /** The single app-wide playback session (player screen + mini player). */
+    val playback: PlaybackController by lazy {
+        PlaybackController(appContext, httpClient, historyRepository, settingsRepository, appScope)
+    }
+
     /** Shared HTTP client for streaming, with explicit timeouts so bad links fail fast. */
     val httpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -44,10 +50,5 @@ class AppContainer(context: Context) {
             .readTimeout(20, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build()
-    }
-
-    /** The single app-wide playback session (player screen + mini player). */
-    val playback: PlaybackController by lazy {
-        PlaybackController(appContext, httpClient, historyRepository, settingsRepository, appScope)
     }
 }
