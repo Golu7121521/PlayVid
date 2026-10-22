@@ -8,7 +8,6 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
-import androidx.media.app.NotificationCompat.MediaStyle
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -128,8 +127,7 @@ class PlaybackService : MediaSessionService() {
 
         session?.let {
             builder.setStyle(
-                MediaStyle()
-                    .setMediaSession(it.sessionCompatToken)
+                androidx.media3.session.MediaStyleNotificationHelper.MediaStyle(it)
                     .setShowActionsInCompactView(0, 1)
             )
         }
