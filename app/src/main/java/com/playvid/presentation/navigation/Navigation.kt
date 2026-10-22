@@ -9,7 +9,6 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Cloud // Server tab ke liye naya icon
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Home
@@ -41,13 +40,11 @@ import com.playvid.presentation.home.HomeScreen
 import com.playvid.presentation.player.PlayerScreen
 import com.playvid.presentation.playlist.ChannelsScreen
 import com.playvid.presentation.playlist.PlaylistScreen
-import com.playvid.presentation.reels.ReelScreen
 import com.playvid.presentation.settings.SettingsScreen
 import com.playvid.presentation.server.ServerScreen // Naya Import
 
 object Routes {
     const val HOME = "home"
-    const val REELS = "reels"
     const val SERVER = "server" // FILES ki jagah SERVER
     const val LOCAL = "local"
     const val LOCAL_FOLDER = "local_folder/{id}/{name}"
@@ -81,7 +78,6 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 
 private val tabs = listOf(
     Tab(Routes.HOME, "Home", Icons.Filled.Home),
-    Tab(Routes.REELS, "Reels", Icons.Filled.Download),
     Tab(Routes.SERVER, "Server", Icons.Filled.Cloud), // Bottom bar mein Server
     Tab(Routes.LOCAL, "Local", Icons.Filled.VideoLibrary),
     Tab(Routes.PLAYLIST, "Playlist", Icons.AutoMirrored.Filled.PlaylistPlay),
@@ -155,7 +151,6 @@ fun PlayVidNavHost(sharedText: String? = null, onSharedTextConsumed: () -> Unit 
                 popExitTransition = { fadeOut(tween(180)) }
             ) {
                 composable(Routes.HOME) { HomeScreen(onPlay = openPlayer) }
-                composable(Routes.REELS) { ReelScreen() }
                 composable(Routes.SERVER) { ServerScreen(onPlay = openPlayer) } // Naya Route
                 composable(Routes.LOCAL) {
                     LocalFoldersScreen(onOpenFolder = { id, name ->

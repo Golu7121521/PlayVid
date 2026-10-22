@@ -8,7 +8,6 @@ import com.playvid.PlayVidApp
 import com.playvid.presentation.local.LocalFoldersViewModel
 import com.playvid.presentation.home.HomeViewModel
 import com.playvid.presentation.playlist.PlaylistsViewModel
-import com.playvid.presentation.reels.ReelViewModel
 import com.playvid.presentation.settings.SettingsViewModel
 import com.playvid.presentation.server.ServerViewModel
 
@@ -22,7 +21,6 @@ object AppViewModelProvider {
         initializer { ServerViewModel() } // Naya ServerViewModel add kiya gaya hai
         initializer { SettingsViewModel(app().container.settingsRepository, app().container.historyRepository) }
         initializer { LocalFoldersViewModel(app()) }
-        initializer { ReelViewModel(app()) }
         initializer { PlaylistsViewModel(app(), app().container.playlistRepository) }
     }
 }

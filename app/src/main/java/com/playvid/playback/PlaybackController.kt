@@ -55,7 +55,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.schabi.newpipe.extractor.exceptions.AgeRestrictedContentException
 import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
@@ -78,7 +82,30 @@ class PlaybackController(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val isDebuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
     private val youtube = YouTubeResolver(httpClient)
-    private val instagramResolver = InstagramResolver(httpClient)
+    /**
+     * InstagramResolver (unchanged) builds the backend URL by doing a real GET and returning the final
+     * URL. The backend answers that GET with the whole merged video, so doing it here AND again in
+     * ExoPlayer made the server download + merge every reel twice (and the first call hit the 20s
+     * read timeout). This client answers locally, so resolve() just returns the backend stream URL
+     * instantly and the video is fetched exactly once, by the player.
+     */
+    private val instagramResolver = InstagramResolver(
+        httpClient.newBuilder()
+            .addInterceptor { chain ->
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body("".toResponseBody(null))
+                    .build()
+            }
+            .build()
+    )
+
+    /** Host of the Instagram backend currently being streamed; it gets a long first-byte timeout. */
+    @Volatile
+    private var slowStreamHost: String? = null
 
     private var exoPlayer: ExoPlayer? = null
     private var dataSourceFactory: DataSource.Factory? = null
@@ -139,6 +166,7 @@ class PlaybackController(
             }
             if (isDebuggable) Log.w(TAG, "Playback error ${error.errorCodeName}", error)
             val req = _current.value
+            val isInstagramReq = req != null && !req.isLocal && InstagramResolver.isInstagramUrl(req.source)
             val detail = if (req != null && !req.isLocal && YouTubeResolver.isYouTubeUrl(req.source)) {
                 val http = generateSequence<Throwable>(error) { it.cause }
                     .filterIsInstance<HttpDataSource.InvalidResponseCodeException>().firstOrNull()
@@ -147,7 +175,7 @@ class PlaybackController(
                 "\n[${error.errorCodeName}${http?.let { " HTTP ${it.responseCode}" }.orEmpty()} | $mode | $mime]"
             } else ""
             _state.update {
-                it.copy(error = hintFor(error) + detail, isLoading = false, isBuffering = false, isPlaying = false)
+                it.copy(error = (if (isInstagramReq) IG_HINT else hintFor(error)) + detail, isLoading = false, isBuffering = false, isPlaying = false)
             }
         }
     }
@@ -234,7 +262,13 @@ class PlaybackController(
                 if (original.header("Referer") == null) {
                     requestBuilder.header("Referer", "${original.url.scheme}://${original.url.host}/")
                 }
-                chain.proceed(requestBuilder.build())
+                val slow = slowStreamHost
+                val c = if (slow != null && original.url.host == slow) {
+                    // Backend downloads + merges the reel before the first byte (cold start can add 30-50s).
+                    chain.withConnectTimeout(30, TimeUnit.SECONDS)
+                        .withReadTimeout(REEL_READ_TIMEOUT_S, TimeUnit.SECONDS)
+                } else chain
+                c.proceed(requestBuilder.build())
             }
             .build()
 
@@ -300,6 +334,8 @@ class PlaybackController(
                 try {
                     resolvedSource = withContext(Dispatchers.IO) { instagramResolver.resolve(req.source) }
                     title = "Instagram Reel"
+                    slowStreamHost = resolvedSource.toHttpUrlOrNull()?.host
+                    _messages.tryEmit("Reel server se aa rahi hai, pehli baar 30-60 sec lag sakte hain...")
                 } catch (e: Exception) {
                     if (isDebuggable) Log.w(TAG, "Instagram resolve failed", e)
                     if (_current.value?.source == req.source) {
@@ -798,6 +834,8 @@ class PlaybackController(
     private companion object {
         const val TAG = "PlayVid"
         const val HINT_GENERIC = "Check the URL or your internet connection."
+        const val IG_HINT = "Reel load nahi ho payi. Server so raha ho sakta hai, thodi der baad Retry dabao."
+        const val REEL_READ_TIMEOUT_S = 180L
         const val YT_MARKER = -1
         // Browser standard desktop User-Agent to bypass streaming server blocks
         const val CHROME_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
