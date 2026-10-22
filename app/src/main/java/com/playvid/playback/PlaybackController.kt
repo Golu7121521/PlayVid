@@ -249,7 +249,7 @@ class PlaybackController(
 
         val mediaSourceFactory = DefaultMediaSourceFactory(factory)
 
-        val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(context)
+        val renderersFactory = io.github.anilbeesetti.nextlib.media3ext.ffdecoder.NextRenderersFactory(context)
             .setEnableDecoderFallback(true)
             .setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
 

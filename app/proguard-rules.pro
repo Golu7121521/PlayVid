@@ -3,6 +3,9 @@
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
 
+## FFmpeg decoders (NextLib): native code calls back into these classes
+-keep class io.github.anilbeesetti.nextlib.** { *; }
+
 ## NewPipeExtractor
 -keep class org.mozilla.javascript.** { *; }
 -keep class org.mozilla.classfile.ClassFileWriter

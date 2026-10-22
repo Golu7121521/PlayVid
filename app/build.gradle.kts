@@ -100,6 +100,11 @@ dependencies {
     implementation(libs.media3.effect)
     implementation(libs.okhttp)
 
+    // FFmpeg software decoders (VP9, HEVC, AV1, Opus, ...) for videos the phone's own decoder can't play.
+    // VERSION RULE: "<media3 version>-<nextlib version>". The first part MUST equal your Media3 version
+    // in gradle/libs.versions.toml (media3 = "1.7.1" in libs.versions.toml  ->  "1.7.1-0.9.0").
+    implementation("io.github.anilbeesetti:nextlib-media3ext:1.7.1-0.9.0")
+
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
