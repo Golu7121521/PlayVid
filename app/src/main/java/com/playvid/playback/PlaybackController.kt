@@ -139,13 +139,16 @@ class PlaybackController(
             }
             if (isDebuggable) Log.w(TAG, "Playback error ${error.errorCodeName}", error)
             val req = _current.value
-            val detail = if (req != null && !req.isLocal && YouTubeResolver.isYouTubeUrl(req.source)) {
-                val http = generateSequence<Throwable>(error) { it.cause }
-                    .filterIsInstance<HttpDataSource.InvalidResponseCodeException>().firstOrNull()
-                val mime = (error as? ExoPlaybackException)?.rendererFormat?.sampleMimeType.orEmpty()
-                val mode = if (yt?.liveHlsUrl != null) "live" else if (yt?.videos?.isNotEmpty() == true) "direct" else "muxed"
-                "\n[${error.errorCodeName}${http?.let { " HTTP ${it.responseCode}" }.orEmpty()} | $mode | $mime]"
+            val http = generateSequence<Throwable>(error) { it.cause }
+                .filterIsInstance<HttpDataSource.InvalidResponseCodeException>().firstOrNull()
+            val root = generateSequence<Throwable>(error) { it.cause }.last()
+            val mime = (error as? ExoPlaybackException)?.rendererFormat?.sampleMimeType.orEmpty()
+            val mode = if (req != null && !req.isLocal && YouTubeResolver.isYouTubeUrl(req.source)) {
+                " | " + (if (yt?.liveHlsUrl != null) "live" else if (yt?.videos?.isNotEmpty() == true) "direct" else "muxed")
             } else ""
+            val detail = "\n[${error.errorCodeName}${http?.let { " HTTP ${it.responseCode}" }.orEmpty()}$mode" +
+                (if (mime.isNotEmpty()) " | $mime" else "") +
+                " | ${root.javaClass.simpleName}: ${root.message.orEmpty().take(80)}]"
             _state.update {
                 it.copy(error = hintFor(error) + detail, isLoading = false, isBuffering = false, isPlaying = false)
             }
@@ -219,8 +222,8 @@ class PlaybackController(
             .followRedirects(true)
             .followSslRedirects(true)
             .retryOnConnectionFailure(true)
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
             .addInterceptor { chain ->
                 val original = chain.request()
                 val requestBuilder = original.newBuilder()
@@ -246,7 +249,11 @@ class PlaybackController(
 
         val mediaSourceFactory = DefaultMediaSourceFactory(factory)
 
-        val created = ExoPlayer.Builder(context)
+        val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(context)
+            .setEnableDecoderFallback(true)
+            .setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+
+        val created = ExoPlayer.Builder(context, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(
                 AudioAttributes.Builder()
