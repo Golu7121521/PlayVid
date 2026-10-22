@@ -835,7 +835,7 @@ class PlaybackController(
         const val TAG = "PlayVid"
         const val HINT_GENERIC = "Check the URL or your internet connection."
         const val IG_HINT = "Reel load nahi ho payi. Server so raha ho sakta hai, thodi der baad Retry dabao."
-        const val REEL_READ_TIMEOUT_S = 180L
+        const val REEL_READ_TIMEOUT_S = 180
         const val YT_MARKER = -1
         // Browser standard desktop User-Agent to bypass streaming server blocks
         const val CHROME_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
