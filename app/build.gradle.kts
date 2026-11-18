@@ -1,116 +1,91 @@
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ksp)
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
 }
 
+val vc = (project.findProperty("vc") as String?)?.toIntOrNull() ?: 1
+val minify = (project.findProperty("minify") as String?) == "true"
+val vn = (project.findProperty("vn") as String?)?.removePrefix("v") ?: "1.0"
+
 android {
-    namespace = "com.playvid"
-    compileSdk = 35
+    namespace = "com.example.universalplayer"
+    compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.playvid"
-        minSdk = 26            // Adaptive icons + Picture-in-Picture available on every supported device
-        targetSdk = 35
-        versionCode = 40
-        versionName = "3.6.0"
-        // UI strings are English-only; this drops every other language's strings that the
-        // libraries (AndroidX, Media3, ...) otherwise bundle for their own internal UI bits.
-        resourceConfigurations += setOf("en")
+        applicationId = "com.example.universalplayer"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = vc
+        versionName = vn
+        // Only arm64 APK
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
-    // One APK per CPU architecture instead of one fat APK carrying all four native-library sets
-    // (arm64-v8a, armeabi-v7a, x86_64, x86) — each download is a quarter of the native-lib weight.
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-            isUniversalApk = false
-        }
-    }
-
-    // Release signing: CI passes these through environment variables (see .github/workflows/build.yml)
     signingConfigs {
+        // Fixed key: every build is signed the same way, so friends can update the app without uninstalling.
         create("release") {
-            val path = System.getenv("KEYSTORE_PATH")
-            if (!path.isNullOrBlank()) {
-                storeFile = file(path)
-                storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS")
-                keyPassword = System.getenv("KEY_PASSWORD")
-            }
+            storeFile = file("release.keystore")
+            storePassword = "universalplayer"
+            keyAlias = "friends"
+            keyPassword = "universalplayer"
         }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Smaller APK when built with -Pminify=true (see workflow input). Off by default = safest.
+            isMinifyEnabled = minify
+            isShrinkResources = minify
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // An unsigned APK can't be installed at all. Until a real release keystore secret is
-            // added, sign with the debug key instead so this (minified, split, much smaller)
-            // build is still directly installable; switches to the real key automatically once
-            // KEYSTORE_PATH is set.
-            signingConfig = if (!System.getenv("KEYSTORE_PATH").isNullOrBlank()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
     compileOptions {
-        isCoreLibraryDesugaringEnabled = true // NewPipeExtractor needs java.nio/time APIs on minSdk < 33
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-        // Media3 marks parts of its API @UnstableApi; opt in once for the whole module.
-        freeCompilerArgs += "-opt-in=androidx.media3.common.util.UnstableApi"
-    }
+    kotlinOptions { jvmTarget = "17" }
+
     buildFeatures { compose = true }
-    lint { checkReleaseBuilds = false }
-    packaging { resources { excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "META-INF/DEPENDENCIES", "META-INF/INDEX.LIST") } }
+    composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
+
+    packaging {
+        // Required by youtubedl-android (python/yt-dlp are shipped as native libs)
+        jniLibs { useLegacyPackaging = true }
+        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
 }
 
 dependencies {
-    implementation(platform(libs.compose.bom))
-    implementation(libs.compose.ui)
-    implementation(libs.compose.material3)
-    implementation(libs.compose.icons)
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.lifecycle.process)
-    implementation(libs.androidx.navigation.compose)
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.core:core-splashscreen:1.0.1")
+    implementation("androidx.activity:activity-compose:1.9.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.3")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    implementation(libs.media3.exoplayer)
-    implementation(libs.media3.hls)
-    implementation(libs.media3.dash)
-    implementation(libs.media3.session)
-    implementation(libs.androidx.media)
-    implementation(libs.coil.compose)
-    implementation(libs.media3.ui)
-    implementation(libs.media3.okhttp)
-    implementation(libs.media3.transformer)
-    implementation(libs.media3.effect)
-    implementation(libs.okhttp)
+    val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
+    implementation(composeBom)
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
 
-    // FFmpeg software decoders (VP9, HEVC, AV1, Opus, ...) for videos the phone's own decoder can't play.
-    // VERSION RULE: "<media3 version>-<nextlib version>". The first part MUST equal your Media3 version
-    // in gradle/libs.versions.toml (media3 = "1.7.1" in libs.versions.toml  ->  "1.7.1-0.9.0").
-    implementation("io.github.anilbeesetti:nextlib-media3ext:1.7.1-0.9.0")
+    val media3 = "1.3.1"
+    implementation("androidx.media3:media3-exoplayer:$media3")
+    implementation("androidx.media3:media3-exoplayer-hls:$media3")
+    implementation("androidx.media3:media3-exoplayer-dash:$media3")
+    implementation("androidx.media3:media3-datasource:$media3")
+    implementation("androidx.media3:media3-ui:$media3")
 
-    implementation(libs.room.runtime)
-    implementation(libs.room.ktx)
-    ksp(libs.room.compiler)
-    implementation(libs.datastore)
+    implementation("io.coil-kt:coil-compose:2.6.0")
 
-    // YouTube link support (personal use): resolves a youtube.com / youtu.be link to a playable stream.
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
+    // yt-dlp wrapper: supports 1000+ sites (YouTube, Vimeo, X, Instagram, Facebook, TikTok ...)
+    implementation("io.github.junkfood02.youtubedl-android:library:0.17.2")
 }

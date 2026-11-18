@@ -1,21 +1,10 @@
--keep class androidx.media3.** { *; }
--dontwarn org.conscrypt.**
--dontwarn org.bouncycastle.**
--dontwarn org.openjsse.**
-
-## FFmpeg decoders (NextLib): native code calls back into these classes
--keep class io.github.anilbeesetti.nextlib.** { *; }
-
-## NewPipeExtractor
--keep class org.mozilla.javascript.** { *; }
--keep class org.mozilla.classfile.ClassFileWriter
--dontwarn org.mozilla.javascript.tools.**
--keep class org.schabi.newpipe.extractor.timeago.patterns.** { *; }
--dontwarn javax.script.**
--dontwarn jdk.dynalink.**
--dontwarn com.google.re2j.**
-# Rhino's JSON support optionally does java.beans introspection, which doesn't exist on Android
-# and isn't actually reachable through NewPipeExtractor's usage of Rhino; safe to just ignore.
+# yt-dlp wrapper and its libraries use reflection / JSON mapping
+-keep class com.yausername.** { *; }
+-keep class com.fasterxml.jackson.** { *; }
+-keep class org.apache.commons.** { *; }
+-keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
+-dontwarn com.fasterxml.jackson.**
+-dontwarn org.apache.commons.**
 -dontwarn java.beans.**
--dontwarn java.applet.**
--dontwarn javax.swing.**
+-dontwarn javax.annotation.**
+-dontwarn org.slf4j.**
