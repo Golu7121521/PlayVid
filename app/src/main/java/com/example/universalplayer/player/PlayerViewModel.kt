@@ -302,6 +302,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun friendly(e: Throwable): String {
         val msg = e.message ?: e.javaClass.simpleName
+        if (msg.contains("parse JSON", true)) {
+            return "The site did not return the video (login expired, too many requests, or the site changed)." +
+                    "\n\nTry again in a few minutes, use Advanced > Site login > Re-login, or Advanced > Update video engine."
+        }
         val line = msg.lineSequence().firstOrNull { it.contains("ERROR", true) } ?: msg.lineSequence().first()
         val base = line.removePrefix("ERROR:").trim().take(220).ifBlank { "Could not load this link" }
         val needsLogin = listOf("login", "log in", "age", "cookies", "private", "empty media response", "restricted")

@@ -141,18 +141,24 @@ fun ItemMenuHost(
 ) {
     var step by remember { mutableIntStateOf(0) }
     when (step) {
-        0 -> CompactDialog(
-            onDismissRequest = onDismiss,
-            title = { Text(name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-            text = {
-                Column {
+        0 -> Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                tonalElevation = 4.dp,
+                modifier = Modifier.padding(24.dp).width(200.dp)
+            ) {
+                Column(Modifier.padding(vertical = 6.dp, horizontal = 6.dp)) {
+                    Text(
+                        name, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
                     MenuRow(Icons.Rounded.Edit, "Rename") { step = 1 }
                     MenuRow(Icons.Rounded.Delete, "Remove") { step = 2 }
                 }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-        )
+            }
+        }
         1 -> TextDialog("Rename", "Name", name, "Save", onDismiss) { onRename(it.trim()); onDismiss() }
         else -> CompactDialog(
             onDismissRequest = onDismiss,
@@ -168,13 +174,13 @@ fun ItemMenuHost(
 private fun MenuRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 10.dp),
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, null)
-        Spacer(Modifier.width(16.dp))
-        Text(label, style = MaterialTheme.typography.bodyLarge)
+        Icon(icon, null, Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(label, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

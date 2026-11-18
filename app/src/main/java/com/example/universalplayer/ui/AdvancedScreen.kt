@@ -1,6 +1,12 @@
 package com.example.universalplayer.ui
 
+import android.app.Application
+import android.widget.Toast
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.ui.unit.sp
@@ -47,6 +53,9 @@ fun AdvancedScreen(form: AdvancedForm, onLogin: (LoginSite) -> Unit, onPlay: (St
     var error by remember { mutableStateOf<String?>(null) }
     var confirmSite by remember { mutableStateOf<LoginSite?>(null) }
     var confirmOut by remember { mutableStateOf<LoginSite?>(null) }
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var updating by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -137,6 +146,30 @@ fun AdvancedScreen(form: AdvancedForm, onLogin: (LoginSite) -> Unit, onPlay: (St
                     if (isIn) TextButton(onClick = { confirmOut = site }) { Text("Sign out") }
                     OutlinedButton(onClick = { confirmSite = site }) { Text(if (isIn) "Re-login" else "Sign in") }
                 }
+            }
+
+            SectionTitle("Video engine")
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "If a site stops working, update the engine that reads video links.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                OutlinedButton(enabled = !updating, onClick = {
+                    updating = true
+                    scope.launch {
+                        val ok = withContext(Dispatchers.IO) {
+                            runCatching {
+                                com.example.universalplayer.AppInit.ready.await()
+                                com.example.universalplayer.AppInit.update(ctx.applicationContext as Application, true)
+                            }.getOrDefault(false)
+                        }
+                        updating = false
+                        Toast.makeText(ctx, if (ok) "Video engine updated" else "Could not update. Check internet and try again", Toast.LENGTH_LONG).show()
+                    }
+                }) { Text(if (updating) "Updating..." else "Update") }
             }
         }
     }

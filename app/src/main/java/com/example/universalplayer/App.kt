@@ -31,14 +31,15 @@ object AppInit {
                 ready.completeExceptionally(e)
                 return@thread
             }
-            maybeUpdate(app)
+            update(app)
         }
     }
 
-    private fun maybeUpdate(app: Application) {
+    /** Updates yt-dlp. Automatic once per 12 h; [force] = from the "Update video engine" button. */
+    fun update(app: Application, force: Boolean = false): Boolean {
         val prefs = app.getSharedPreferences("ytdlp", 0)
         val last = prefs.getLong("last_update", 0L)
-        if (System.currentTimeMillis() - last < 12 * 3600_000L) return
+        if (!force && System.currentTimeMillis() - last < 12 * 3600_000L) return false
         try {
             // Reflection keeps this independent of small API naming changes between versions.
             val cls = Class.forName("com.yausername.youtubedl_android.YoutubeDL\$UpdateChannel")
@@ -51,8 +52,10 @@ object AppInit {
             if (channel != null && method != null) {
                 method.invoke(YoutubeDL.getInstance(), app, channel)
                 prefs.edit().putLong("last_update", System.currentTimeMillis()).apply()
+                return true
             }
         } catch (_: Throwable) {
         }
+        return false
     }
 }

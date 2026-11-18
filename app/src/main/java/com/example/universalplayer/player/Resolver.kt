@@ -90,7 +90,7 @@ object Resolver {
         memo[memoKey(url, o)]?.let { return@withContext it }
         withTimeout(30_000) { AppInit.ready.await() }
 
-        val req = YoutubeDLRequest(url).apply {
+        fun buildReq(useVault: Boolean) = YoutubeDLRequest(url).apply {
             addOption("--dump-single-json")
             addOption("--no-playlist")
             addOption("--no-warnings")
@@ -101,12 +101,22 @@ object Resolver {
                 else if (k != "Cookie") addOption("--add-header", "$k:$v")
             }
             // typed cookie (Advanced tab) or the one saved by "Site login"
-            val ck = o.cookie.ifBlank { CookieVault.forUrl(url).orEmpty() }
+            val ck = o.cookie.ifBlank { if (useVault) CookieVault.forUrl(url).orEmpty() else "" }
             if (ck.isNotBlank()) {
                 CookieVault.writeFile(url, ck)?.let { addOption("--cookies", it.absolutePath) }
             }
         }
-        val out = YoutubeDL.getInstance().execute(req).out ?: ""
+        val out = try {
+            YoutubeDL.getInstance().execute(buildReq(true)).out ?: ""
+        } catch (e: Exception) {
+            // an old / rejected saved login can make the site answer with a web page instead of data:
+            // try once more without it (public videos still work)
+            val m = e.message ?: ""
+            val hasVault = o.cookie.isBlank() && !CookieVault.forUrl(url).isNullOrBlank()
+            if (hasVault && (m.contains("parse JSON", true) || m.contains("login", true) || m.contains("cookies", true))) {
+                YoutubeDL.getInstance().execute(buildReq(false)).out ?: ""
+            } else throw e
+        }
         val line = out.lineSequence().map { it.trim() }.lastOrNull { it.startsWith("{") }
             ?: throw IllegalStateException("No data returned for this link")
         var j = JSONObject(line)
