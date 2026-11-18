@@ -302,7 +302,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun friendly(e: Throwable): String {
         val msg = e.message ?: e.javaClass.simpleName
-        if (msg.contains("parse JSON", true)) {
+        if (msg.contains("parse JSON", true) || msg.contains("Bad Request", true)) {
             return "The site did not return the video (login expired, too many requests, or the site changed)." +
                     "\n\nTry again in a few minutes, use Advanced > Site login > Re-login, or Advanced > Update video engine."
         }

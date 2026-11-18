@@ -106,16 +106,24 @@ object Resolver {
                 CookieVault.writeFile(url, ck)?.let { addOption("--cookies", it.absolutePath) }
             }
         }
-        val out = try {
+        fun runYt(): String = try {
             YoutubeDL.getInstance().execute(buildReq(true)).out ?: ""
         } catch (e: Exception) {
-            // an old / rejected saved login can make the site answer with a web page instead of data:
+            // an old / rejected saved login can make the site answer with an error page:
             // try once more without it (public videos still work)
             val m = e.message ?: ""
             val hasVault = o.cookie.isBlank() && !CookieVault.forUrl(url).isNullOrBlank()
-            if (hasVault && (m.contains("parse JSON", true) || m.contains("login", true) || m.contains("cookies", true))) {
+            if (hasVault && (m.contains("parse JSON", true) || m.contains("login", true) ||
+                        m.contains("cookies", true) || m.contains("400") || m.contains("Bad Request", true))
+            ) {
                 YoutubeDL.getInstance().execute(buildReq(false)).out ?: ""
             } else throw e
+        }
+        val out = try {
+            runYt()
+        } catch (e: Exception) {
+            InstagramFallback.resolve(url, o)?.let { return@withContext it }
+            throw e
         }
         val line = out.lineSequence().map { it.trim() }.lastOrNull { it.startsWith("{") }
             ?: throw IllegalStateException("No data returned for this link")

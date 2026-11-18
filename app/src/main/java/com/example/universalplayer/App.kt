@@ -43,7 +43,7 @@ object AppInit {
         try {
             // Reflection keeps this independent of small API naming changes between versions.
             val cls = Class.forName("com.yausername.youtubedl_android.YoutubeDL\$UpdateChannel")
-            val channel = listOf("STABLE", "_STABLE").firstNotNullOfOrNull { n ->
+            val channel = listOf("NIGHTLY", "_NIGHTLY", "STABLE", "_STABLE").firstNotNullOfOrNull { n ->
                 runCatching { cls.getField(n).get(null) }.getOrNull()
             }
             val method = YoutubeDL::class.java.methods.firstOrNull {
