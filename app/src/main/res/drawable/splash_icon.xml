@@ -1,6 +1,6 @@
 <animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
-    android:drawable="@drawable/brand_icon">
+    android:drawable="@drawable/brand_icon_small">
     <target android:name="rot">
         <aapt:attr name="android:animation">
             <objectAnimator

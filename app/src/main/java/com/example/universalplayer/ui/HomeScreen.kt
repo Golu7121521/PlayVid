@@ -96,7 +96,7 @@ fun HomeScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Continue watching", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(6.dp))
-                    recent.take(5).forEach { h ->
+                    recent.take(6).forEach { h ->
                         Row(
                             Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
                                 .longPressable({ onPlayItem(h) }, { target = h })

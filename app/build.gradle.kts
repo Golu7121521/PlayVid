@@ -82,6 +82,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:$media3")
     implementation("androidx.media3:media3-exoplayer-dash:$media3")
     implementation("androidx.media3:media3-datasource:$media3")
+    implementation("androidx.media3:media3-database:$media3")
     implementation("androidx.media3:media3-ui:$media3")
 
     implementation("io.coil-kt:coil-compose:2.6.0")

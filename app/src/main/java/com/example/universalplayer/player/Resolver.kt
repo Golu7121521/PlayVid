@@ -35,12 +35,20 @@ data class Resolved(
     val direct: Boolean,
     val directUrl: String?,
     val directMime: String?,
-    val webUrl: String
-)
+    val webUrl: String,
+    val durationSec: Double = 0.0
+) {
+    /** Reel / Short style clip (<= 60 s, not live): cached on disk + in memory until the app restarts. */
+    val isShort: Boolean get() = !direct && !isLive && durationSec > 0.0 && durationSec <= 60.0
+}
 
 object Resolver {
     private val progressiveExt =
         setOf("mp4", "webm", "mkv", "mov", "m4v", "3gp", "mp3", "m4a", "aac", "ogg", "opus", "flac", "wav")
+
+    private val memo = java.util.concurrent.ConcurrentHashMap<String, Resolved>()
+    private fun memoKey(url: String, o: PlayOptions) = url + "|" + o.toJson().toString()
+    fun forget(url: String, o: PlayOptions) { memo.remove(memoKey(url, o)) }
 
     private fun directKind(url: String): String? {
         val path = runCatching { Uri.parse(url).path ?: "" }.getOrDefault("").lowercase()
@@ -79,6 +87,7 @@ object Resolver {
             )
         }
 
+        memo[memoKey(url, o)]?.let { return@withContext it }
         withTimeout(30_000) { AppInit.ready.await() }
 
         val req = YoutubeDLRequest(url).apply {
@@ -149,7 +158,9 @@ object Resolver {
         }
         if (fmts.isEmpty()) throw IllegalStateException("No playable stream found for this link")
 
-        Resolved(title, thumb, live, fmts, parseSubs(j), false, null, null, url)
+        val res = Resolved(title, thumb, live, fmts, parseSubs(j), false, null, null, url, j.optDouble("duration", 0.0))
+        if (res.isShort) memo[memoKey(url, o)] = res
+        res
     }
 
     private fun subMime(ext: String) = when (ext) {

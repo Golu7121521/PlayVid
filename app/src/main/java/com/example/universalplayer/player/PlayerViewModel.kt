@@ -15,7 +15,9 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
@@ -99,6 +101,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private var opts = PlayOptions()
     private var queue: List<HistoryItem> = emptyList()
     private var queueIndex = -1
+    private var autoRetry = false
+    private var lastVideoKey: String? = null
+    private var lastKeys: List<String> = emptyList()
+    private val rememberedHeight = HashMap<String, Int>()
 
     /** true = portrait video, false = landscape, null = unknown yet */
     private val _portrait = MutableStateFlow<Boolean?>(null)
@@ -131,6 +137,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            val u = currentUrl
+            val r = resolved
+            if (r != null && r.isShort && !autoRetry && u != null) {
+                // cached link may have expired: forget it and resolve again once
+                autoRetry = true
+                Resolver.forget(u, opts)
+                lastKeys.forEach { ShortCache.remove(getApplication(), it) }
+                startLoad(u, true)
+                return
+            }
             _load.value = LoadState.Error("Playback error: ${error.errorCodeName}")
         }
     }
@@ -211,7 +227,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         currentUrl?.let { startLoad(it) }
     }
 
-    private fun startLoad(u: String) {
+    private fun startLoad(u: String, auto: Boolean = false) {
+        if (!auto) autoRetry = false
         saveProgress()
         job?.cancel()
         currentUrl = u
@@ -243,7 +260,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                     player.setMediaSource(directFactory(opts).createMediaSource(item), startArg)
                 } else {
                     val hs = heights(r)
-                    selHeight = hs.firstOrNull { it <= 1080 } ?: hs.firstOrNull() ?: 0
+                    selHeight = rememberedHeight[r.webUrl]?.takeIf { it in hs } ?: hs.firstOrNull { it <= 1080 } ?: hs.firstOrNull() ?: 0
                     selLang = audioLangs(r).firstOrNull() ?: "und"
                     player.setMediaSource(buildSource(r, selHeight, selLang), startArg)
                     updateFormatOptions()
@@ -310,12 +327,19 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         else -> 0
     }
 
-    private fun src(f: Fmt): MediaSource {
-        val dsf = DefaultHttpDataSource.Factory()
+    private fun src(f: Fmt, cacheKey: String? = null): MediaSource {
+        val http = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
             .setDefaultRequestProperties(f.headers)
+        val dsf: DataSource.Factory = if (cacheKey != null) {
+            CacheDataSource.Factory()
+                .setCache(ShortCache.get(getApplication()))
+                .setUpstreamDataSourceFactory(http)
+                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        } else http
         val item = MediaItem.Builder().setUri(f.url).apply {
             if (f.protocol.contains("m3u8")) setMimeType(MimeTypes.APPLICATION_M3U8)
+            if (cacheKey != null) setCustomCacheKey(cacheKey)
         }.build()
         return DefaultMediaSourceFactory(dsf).createMediaSource(item)
     }
@@ -333,8 +357,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val audios = audioFmts(r)
         fun pickAudio() = audios.filter { langKey(it) == lang }.maxByOrNull { it.tbr } ?: audios.maxByOrNull { it.tbr }!!
 
+        val keys = mutableListOf<String>()
+        fun s(f: Fmt, kind: String): MediaSource {
+            val k = if (r.isShort && !f.protocol.contains("m3u8"))
+                "${r.webUrl}|$kind|${if (kind == "a") langKey(f) else f.height.toString()}" else null
+            if (k != null) { keys += k; if (kind == "v") lastVideoKey = k }
+            return src(f, k)
+        }
+
         val main: List<MediaSource> = if (vids.isEmpty()) {
-            listOf(src(pickAudio()))
+            listOf(s(pickAudio(), "a"))
         } else {
             val cands = vids.filter { h == 0 || it.height == h }.ifEmpty { vids }
             val videoOnly = cands.filter { it.acodec == "none" }
@@ -343,8 +375,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 cands.filter { it.acodec != "none" }.maxByOrNull { it.tbr } ?: cands.first()
             }
-            if (v.acodec == "none" && audios.isNotEmpty()) listOf(src(v), src(pickAudio())) else listOf(src(v))
+            if (v.acodec == "none" && audios.isNotEmpty()) listOf(s(v, "v"), s(pickAudio(), "a")) else listOf(s(v, "v"))
         }
+        lastKeys = keys.toList()
         val all = main + r.subs.map { subSource(it) }
         return if (all.size == 1) all[0] else MergingMediaSource(*all.toTypedArray())
     }
@@ -409,8 +442,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             player.trackSelectionParameters = b.build()
             _qualities.value = _qualities.value.map { it.copy(selected = it.id == id) }
         } else {
+            val oldKey = lastVideoKey
             selHeight = id.toIntOrNull() ?: 0
+            resolved?.let { if (it.isShort) rememberedHeight[it.webUrl] = selHeight }
             rebuild()
+            // new quality replaces the old cached copy
+            if (oldKey != null && oldKey != lastVideoKey) ShortCache.remove(getApplication(), oldKey)
         }
     }
 

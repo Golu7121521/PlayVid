@@ -44,20 +44,24 @@ object CookieVault {
         runCatching { CookieManager.getInstance().removeAllCookies(null) }
     }
 
+    private fun canonical(root: String) = if (root == "twitter.com") "x.com" else root
+
     fun forUrl(url: String): String? {
         val host = runCatching { Uri.parse(url).host }.getOrNull() ?: return null
-        return prefs?.getString(rootDomain(host), null)
+        return prefs?.getString(canonical(rootDomain(host)), null)
     }
 
     /** Writes a Netscape cookie file (what yt-dlp --cookies expects) and returns it. */
     fun writeFile(url: String, cookie: String): File? {
         val ctx = appCtx ?: return null
         val host = runCatching { Uri.parse(url).host }.getOrNull() ?: return null
-        val domain = rootDomain(host)
+        val root = rootDomain(host)
+        val domains = if (root == "x.com" || root == "twitter.com") listOf("x.com", "twitter.com") else listOf(root)
         val text = if (cookie.contains('\t') || cookie.startsWith("# Netscape")) cookie else {
             val sb = StringBuilder("# Netscape HTTP Cookie File\n")
-            cookie.split(';').map { it.trim() }.filter { it.contains('=') }.forEach {
-                sb.append(".$domain\tTRUE\t/\tTRUE\t2147483647\t${it.substringBefore('=')}\t${it.substringAfter('=')}\n")
+            val pairs = cookie.split(';').map { it.trim() }.filter { it.contains('=') }
+            for (d in domains) for (p in pairs) {
+                sb.append(".$d\tTRUE\t/\tTRUE\t2147483647\t${p.substringBefore('=')}\t${p.substringAfter('=')}\n")
             }
             sb.toString()
         }

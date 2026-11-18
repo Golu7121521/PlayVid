@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.universalplayer.data.CookieVault
 import com.example.universalplayer.data.LoginSite
@@ -46,8 +47,6 @@ fun LoginScreen(site: LoginSite, onClose: () -> Unit) {
     val ctx = LocalContext.current
     var progress by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
-    var desktop by remember { mutableStateOf(false) }
-    var pageUrl by remember { mutableStateOf(site.url) }
 
     val web = remember {
         WebView(ctx).apply {
@@ -59,7 +58,13 @@ fun LoginScreen(site: LoginSite, onClose: () -> Unit) {
                 javaScriptCanOpenWindowsAutomatically = true
                 mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                 cacheMode = WebSettings.LOAD_DEFAULT
-                userAgentString = chromeUa(ctx, false)
+                userAgentString = chromeUa(ctx, true)      // desktop site by default
+                useWideViewPort = true
+                loadWithOverviewMode = true
+                setSupportZoom(true)
+                builtInZoomControls = true
+                displayZoomControls = false
+                setSupportMultipleWindows(false)
                 if (Build.VERSION.SDK_INT >= 29) forceDark = WebSettings.FORCE_DARK_OFF
             }
             CookieManager.getInstance().setAcceptCookie(true)
@@ -70,7 +75,6 @@ fun LoginScreen(site: LoginSite, onClose: () -> Unit) {
             webViewClient = object : WebViewClient() {
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                     error = null
-                    url?.let { pageUrl = it }
                 }
 
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, e: WebResourceError) {
@@ -94,45 +98,47 @@ fun LoginScreen(site: LoginSite, onClose: () -> Unit) {
     BackHandler { if (web.canGoBack()) web.goBack() else onClose() }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, "Close") }
-            Text("Sign in to ${site.name}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            IconButton(onClick = { error = null; web.reload() }) { Icon(Icons.Rounded.Refresh, "Reload") }
-            Button(onClick = {
-                CookieManager.getInstance().flush()
-                val c = CookieManager.getInstance().getCookie("https://www.${site.domain}")
-                if (c.isNullOrBlank()) {
-                    Toast.makeText(ctx, "Please sign in first", Toast.LENGTH_SHORT).show()
-                } else {
-                    CookieVault.save(site.domain, c)
-                    Toast.makeText(ctx, "Saved. Try the video again.", Toast.LENGTH_SHORT).show()
-                    onClose()
-                }
-            }) { Text("Done") }
-            Spacer(Modifier.width(8.dp))
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        // slim top bar
+        Row(
+            Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Rounded.Close, "Close", Modifier.size(20.dp))
+            }
             Text(
-                pageUrl, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f)
+                "Sign in to ${site.name}", style = MaterialTheme.typography.titleSmall,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
             )
-            Text("Desktop site", style = MaterialTheme.typography.labelMedium)
+            IconButton(onClick = { error = null; web.reload() }, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Rounded.Refresh, "Reload", Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(2.dp))
+            Button(
+                onClick = {
+                    CookieManager.getInstance().flush()
+                    val c = CookieManager.getInstance().getCookie("https://www.${site.domain}")
+                    if (c.isNullOrBlank()) {
+                        Toast.makeText(ctx, "Please sign in first", Toast.LENGTH_SHORT).show()
+                    } else {
+                        CookieVault.save(site.domain, c)
+                        Toast.makeText(ctx, "Saved. Try the video again.", Toast.LENGTH_SHORT).show()
+                        onClose()
+                    }
+                },
+                modifier = Modifier.height(30.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+            ) { Text("Done", fontSize = 13.sp) }
             Spacer(Modifier.width(6.dp))
-            Switch(checked = desktop, onCheckedChange = {
-                desktop = it
-                web.settings.userAgentString = chromeUa(ctx, it)
-                web.settings.useWideViewPort = it
-                web.settings.loadWithOverviewMode = it
-                web.loadUrl(site.url)
-            })
         }
-        if (progress in 1..99) LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth())
+        if (progress in 1..99) {
+            LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth().height(2.dp))
+        }
         error?.let {
             Text(
                 "Page error: $it. Check internet, then tap reload.",
                 color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
             )
         }
         AndroidView(factory = { web }, modifier = Modifier.weight(1f).fillMaxWidth())

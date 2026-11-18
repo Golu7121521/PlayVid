@@ -169,6 +169,7 @@ private fun MenuRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(icon, null)
@@ -193,13 +194,16 @@ fun CompactDialog(
             tonalElevation = 4.dp,
             modifier = Modifier.padding(24.dp).widthIn(min = 250.dp, max = 290.dp)
         ) {
-            Column(Modifier.padding(start = 20.dp, end = 10.dp, top = 16.dp, bottom = 6.dp)) {
+            Column(
+                Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 title?.let {
-                    ProvideTextStyle(MaterialTheme.typography.titleMedium) { it() }
+                    ProvideTextStyle(MaterialTheme.typography.titleMedium.copy(textAlign = TextAlign.Center)) { it() }
                     Spacer(Modifier.height(8.dp))
                 }
                 text?.let {
-                    ProvideTextStyle(MaterialTheme.typography.bodyMedium) { it() }
+                    ProvideTextStyle(MaterialTheme.typography.bodyMedium.copy(textAlign = TextAlign.Center)) { it() }
                     Spacer(Modifier.height(6.dp))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {

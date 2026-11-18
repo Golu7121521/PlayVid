@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -42,11 +43,14 @@ class MainActivity : ComponentActivity() {
     private var screen by mutableStateOf(Screen.Main)
     private var tab by mutableStateOf(Tab.Home)
     private var homeText by mutableStateOf("")
+    private var playlistOpenId by mutableStateOf<String?>(null)
     private var loginSite by mutableStateOf<com.example.universalplayer.data.LoginSite?>(null)
     private var lastClip: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
+        val splash = installSplashScreen()
+        val splashStart = SystemClock.uptimeMillis()
+        splash.setKeepOnScreenCondition { SystemClock.uptimeMillis() - splashStart < 3000 }
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         handleIntent(intent)
@@ -86,7 +90,7 @@ class MainActivity : ComponentActivity() {
                                                 )
                                                 Tab.Advanced -> AdvancedScreen(form, onLogin = { loginSite = it; screen = Screen.Login }) { url, o -> play(url, o) }
                                                 Tab.History -> HistoryScreen { play(it.url, it.opts) }
-                                                Tab.Playlist -> PlaylistScreen { items, i ->
+                                                Tab.Playlist -> PlaylistScreen(playlistOpenId, { playlistOpenId = it }) { items, i ->
                                                     vm.openQueue(items, i)
                                                     screen = Screen.Player
                                                 }

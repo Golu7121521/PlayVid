@@ -29,15 +29,14 @@ import com.example.universalplayer.normalizeUrl
 import kotlinx.coroutines.launch
 
 @Composable
-fun PlaylistScreen(onPlay: (List<HistoryItem>, Int) -> Unit) {
+fun PlaylistScreen(openId: String?, onOpen: (String?) -> Unit, onPlay: (List<HistoryItem>, Int) -> Unit) {
     val lists by PlaylistStore.playlists.collectAsState()
-    var openId by remember { mutableStateOf<String?>(null) }
     val open = lists.firstOrNull { it.id == openId }
     if (open == null) {
-        PlaylistsHome(lists) { openId = it }
+        PlaylistsHome(lists) { onOpen(it) }
     } else {
-        BackHandler { openId = null }
-        PlaylistDetail(open, onBack = { openId = null }, onPlay = onPlay)
+        BackHandler { onOpen(null) }
+        PlaylistDetail(open, onBack = { onOpen(null) }, onPlay = onPlay)
     }
 }
 
@@ -238,7 +237,7 @@ private fun CreatePlaylistDialog(onDismiss: () -> Unit) {
                 )
                 OutlinedTextField(
                     url, { url = it; err = null }, singleLine = true, enabled = !loading,
-                    label = { Text("M3U playlist link (optional)") }
+                    label = { Text("M3U playlist link") }
                 )
                 if (loading) {
                     Row(verticalAlignment = Alignment.CenterVertically) {

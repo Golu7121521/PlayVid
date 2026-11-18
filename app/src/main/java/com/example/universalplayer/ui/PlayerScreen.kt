@@ -400,7 +400,7 @@ fun PlayerScreen(vm: PlayerViewModel, inPip: Boolean, onBack: () -> Unit, onEnte
 private fun GlassMenu(modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
     val shape = RoundedCornerShape(16.dp)
     Column(
-        modifier.widthIn(min = 80.dp, max = 124.dp).heightIn(max = 220.dp)
+        modifier.widthIn(max = 150.dp).width(IntrinsicSize.Max).heightIn(max = 220.dp)
             .clip(shape)
             .background(
                 Brush.linearGradient(
@@ -418,12 +418,12 @@ private fun GlassMenu(modifier: Modifier, content: @Composable ColumnScope.() ->
 @Composable
 private fun GlassItem(label: String, selected: Boolean, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 4.dp).clip(RoundedCornerShape(10.dp))
+            .background(if (selected) Color.White.copy(alpha = 0.22f) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.width(14.dp)) {
-            if (selected) Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(12.dp))
-        }
         Text(
             label, color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal

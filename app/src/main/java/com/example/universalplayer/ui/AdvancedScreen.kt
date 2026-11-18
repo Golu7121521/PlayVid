@@ -46,6 +46,7 @@ class AdvancedForm {
 fun AdvancedScreen(form: AdvancedForm, onLogin: (LoginSite) -> Unit, onPlay: (String, PlayOptions) -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var confirmSite by remember { mutableStateOf<LoginSite?>(null) }
+    var confirmOut by remember { mutableStateOf<LoginSite?>(null) }
 
     Scaffold(
         topBar = {
@@ -99,10 +100,25 @@ fun AdvancedScreen(form: AdvancedForm, onLogin: (LoginSite) -> Unit, onPlay: (St
             confirmSite?.let { cs ->
                 CompactDialog(
                     onDismissRequest = { confirmSite = null },
-                    title = { Text("Sign in to ${cs.name}?") },
-                    text = { Text("A login page will open. Sign in, then tap Done.") },
+                    title = { Text("Sign in securely?") },
+                    text = {
+                        Text(
+                            "You sign in on ${cs.name}'s own page. Your password is never saved or seen by this app. " +
+                                    "Only a login session stays privately on this phone, used just to play your videos. " +
+                                    "You can sign out anytime."
+                        )
+                    },
                     confirmButton = { TextButton(onClick = { confirmSite = null; onLogin(cs) }) { Text("Continue") } },
                     dismissButton = { TextButton(onClick = { confirmSite = null }) { Text("Cancel") } }
+                )
+            }
+            confirmOut?.let { co ->
+                CompactDialog(
+                    onDismissRequest = { confirmOut = null },
+                    title = { Text("Sign out of ${co.name}?") },
+                    text = { Text("Your saved login for ${co.name} will be removed from this app.") },
+                    confirmButton = { TextButton(onClick = { CookieVault.remove(co.domain); confirmOut = null }) { Text("Sign out") } },
+                    dismissButton = { TextButton(onClick = { confirmOut = null }) { Text("Cancel") } }
                 )
             }
             SectionTitle("Site login (age-restricted / private videos)")
@@ -118,7 +134,7 @@ fun AdvancedScreen(form: AdvancedForm, onLogin: (LoginSite) -> Unit, onPlay: (St
                             color = if (isIn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (isIn) TextButton(onClick = { CookieVault.remove(site.domain) }) { Text("Sign out") }
+                    if (isIn) TextButton(onClick = { confirmOut = site }) { Text("Sign out") }
                     OutlinedButton(onClick = { confirmSite = site }) { Text(if (isIn) "Re-login" else "Sign in") }
                 }
             }
