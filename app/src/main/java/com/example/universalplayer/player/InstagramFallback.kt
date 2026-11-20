@@ -24,8 +24,11 @@ object InstagramFallback {
             val clean = html.replace("\\\"", "\"")
             val video = grab(clean, "video_url") ?: continue
             val thumb = grab(clean, "display_url") ?: grab(clean, "thumbnail_src")
+            val user = Regex("\"username\"\\s*:\\s*\"([^\"]+)\"").find(clean)?.groupValues?.get(1)
+            val dur = Regex("\"video_duration\"\\s*:\\s*([0-9.]+)").find(clean)?.groupValues?.get(1)?.toDoubleOrNull()
+                ?: if (url.contains("/reel", true)) 45.0 else 0.0
             return Resolved(
-                title = "Instagram reel $code",
+                title = if (user != null) "Reel by @$user" else "Instagram reel $code",
                 thumb = thumb,
                 isLive = false,
                 formats = listOf(
@@ -35,7 +38,7 @@ object InstagramFallback {
                         headers = mapOf("User-Agent" to UA, "Referer" to "https://www.instagram.com/")
                     )
                 ),
-                subs = emptyList(), direct = false, directUrl = null, directMime = null, webUrl = url
+                subs = emptyList(), direct = false, directUrl = null, directMime = null, webUrl = url, durationSec = dur
             )
         }
         return null

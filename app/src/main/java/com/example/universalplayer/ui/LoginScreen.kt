@@ -1,10 +1,13 @@
 package com.example.universalplayer.ui
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.Message
 import android.webkit.CookieManager
+import android.webkit.JsResult
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -31,7 +34,7 @@ import com.example.universalplayer.data.CookieVault
 import com.example.universalplayer.data.LoginSite
 
 /** Looks like real Chrome (no "wv" marker) and matches the installed WebView version. */
-private fun chromeUa(ctx: android.content.Context, desktop: Boolean): String {
+private fun chromeUa(ctx: Context, desktop: Boolean): String {
     val def = WebSettings.getDefaultUserAgent(ctx)
     val ver = Regex("Chrome/([\\d.]+)").find(def)?.groupValues?.get(1) ?: "126.0.0.0"
     return if (desktop) {
@@ -43,80 +46,119 @@ private fun chromeUa(ctx: android.content.Context, desktop: Boolean): String {
 
 @SuppressLint("SetJavaScriptEnabled")
 @Suppress("DEPRECATION")
+private fun configureWeb(ctx: Context, w: WebView, site: LoginSite) {
+    w.setBackgroundColor(android.graphics.Color.WHITE)
+    w.settings.apply {
+        javaScriptEnabled = true
+        domStorageEnabled = true
+        databaseEnabled = true
+        javaScriptCanOpenWindowsAutomatically = true
+        setSupportMultipleWindows(true)
+        mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        cacheMode = WebSettings.LOAD_DEFAULT
+        mediaPlaybackRequiresUserGesture = false
+        userAgentString = chromeUa(ctx, site.desktop)
+        useWideViewPort = site.desktop
+        loadWithOverviewMode = site.desktop
+        setSupportZoom(true)
+        builtInZoomControls = true
+        displayZoomControls = false
+        if (Build.VERSION.SDK_INT >= 29) forceDark = WebSettings.FORCE_DARK_OFF
+    }
+    CookieManager.getInstance().setAcceptCookie(true)
+    CookieManager.getInstance().setAcceptThirdPartyCookies(w, true)
+}
+
 @Composable
 fun LoginScreen(site: LoginSite, onClose: () -> Unit) {
     val ctx = LocalContext.current
     var progress by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
+    var popup by remember { mutableStateOf<WebView?>(null) }
+
+    val client = remember {
+        object : WebViewClient() {
+            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) { error = null }
+
+            override fun onReceivedError(view: WebView, request: WebResourceRequest, e: WebResourceError) {
+                if (request.isForMainFrame) error = "${e.description} (${e.errorCode})"
+            }
+
+            override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, r: WebResourceResponse) {
+                if (request.isForMainFrame) error = "HTTP ${r.statusCode}"
+            }
+
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val u = request.url.toString()
+                if (u.startsWith("http://") || u.startsWith("https://")) return false
+                // app links (intent://, instagram://): use the web fallback if the page gives one
+                if (u.startsWith("intent://")) {
+                    runCatching {
+                        Intent.parseUri(u, Intent.URI_INTENT_SCHEME).getStringExtra("browser_fallback_url")
+                            ?.let { view.loadUrl(it) }
+                    }
+                }
+                return true
+            }
+        }
+    }
+
+    val chrome = remember {
+        object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView?, newProgress: Int) { progress = newProgress }
+
+            // real pop-up windows (verification / phone-number steps) open on top, like in a browser
+            override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
+                val w = WebView(ctx)
+                configureWeb(ctx, w, site)
+                w.webViewClient = client
+                w.webChromeClient = this
+                popup = w
+                (resultMsg.obj as WebView.WebViewTransport).webView = w
+                resultMsg.sendToTarget()
+                return true
+            }
+
+            override fun onCloseWindow(window: WebView?) {
+                if (popup === window) popup = null
+            }
+
+            override fun onJsAlert(view: WebView, url: String?, message: String?, result: JsResult): Boolean {
+                android.app.AlertDialog.Builder(view.context).setMessage(message)
+                    .setPositiveButton("OK") { _, _ -> result.confirm() }
+                    .setOnCancelListener { result.cancel() }.show()
+                return true
+            }
+
+            override fun onJsConfirm(view: WebView, url: String?, message: String?, result: JsResult): Boolean {
+                android.app.AlertDialog.Builder(view.context).setMessage(message)
+                    .setPositiveButton("OK") { _, _ -> result.confirm() }
+                    .setNegativeButton("Cancel") { _, _ -> result.cancel() }
+                    .setOnCancelListener { result.cancel() }.show()
+                return true
+            }
+        }
+    }
 
     val web = remember {
         WebView(ctx).apply {
-            setBackgroundColor(android.graphics.Color.WHITE)
-            settings.apply {
-                javaScriptEnabled = true
-                domStorageEnabled = true
-                databaseEnabled = true
-                javaScriptCanOpenWindowsAutomatically = true
-                mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                cacheMode = WebSettings.LOAD_DEFAULT
-                userAgentString = chromeUa(ctx, true)      // desktop site by default
-                useWideViewPort = true
-                loadWithOverviewMode = true
-                setSupportZoom(true)
-                builtInZoomControls = true
-                displayZoomControls = false
-                setSupportMultipleWindows(true)
-                if (Build.VERSION.SDK_INT >= 29) forceDark = WebSettings.FORCE_DARK_OFF
-            }
-            CookieManager.getInstance().setAcceptCookie(true)
-            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-            webChromeClient = object : WebChromeClient() {
-                override fun onProgressChanged(view: WebView?, newProgress: Int) { progress = newProgress }
-
-                // links that open in a "new window" (verification / phone number steps) load in this page
-                override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
-                    val temp = WebView(view.context)
-                    temp.webViewClient = object : WebViewClient() {
-                        override fun onPageStarted(v: WebView, url: String?, favicon: Bitmap?) {
-                            if (!url.isNullOrBlank() && url != "about:blank") {
-                                view.loadUrl(url)
-                                v.stopLoading()
-                                v.destroy()
-                            }
-                        }
-                    }
-                    (resultMsg.obj as WebView.WebViewTransport).webView = temp
-                    resultMsg.sendToTarget()
-                    return true
-                }
-            }
-            webViewClient = object : WebViewClient() {
-                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                    error = null
-                }
-
-                override fun onReceivedError(view: WebView, request: WebResourceRequest, e: WebResourceError) {
-                    if (request.isForMainFrame) error = "${e.description} (${e.errorCode})"
-                }
-
-                override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, r: WebResourceResponse) {
-                    if (request.isForMainFrame) error = "HTTP ${r.statusCode}"
-                }
-
-                // ignore "open in app" links (instagram://, intent://) - they would leave a blank page
-                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                    val u = request.url.toString()
-                    return !(u.startsWith("http://") || u.startsWith("https://"))
-                }
-            }
+            configureWeb(ctx, this, site)
+            webViewClient = client
+            webChromeClient = chrome
             loadUrl(site.url)
         }
     }
-    DisposableEffect(Unit) { onDispose { web.destroy() } }
-    BackHandler { if (web.canGoBack()) web.goBack() else onClose() }
+    DisposableEffect(Unit) { onDispose { popup?.destroy(); web.destroy() } }
+    BackHandler {
+        val p = popup
+        when {
+            p != null -> { popup = null; p.destroy() }
+            web.canGoBack() -> web.goBack()
+            else -> onClose()
+        }
+    }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-        // slim top bar
         Row(
             Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -128,7 +170,7 @@ fun LoginScreen(site: LoginSite, onClose: () -> Unit) {
                 "Sign in to ${site.name}", style = MaterialTheme.typography.titleSmall,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
             )
-            IconButton(onClick = { error = null; web.reload() }, modifier = Modifier.size(36.dp)) {
+            IconButton(onClick = { error = null; (popup ?: web).reload() }, modifier = Modifier.size(36.dp)) {
                 Icon(Icons.Rounded.Refresh, "Reload", Modifier.size(20.dp))
             }
             Spacer(Modifier.width(2.dp))
@@ -159,6 +201,11 @@ fun LoginScreen(site: LoginSite, onClose: () -> Unit) {
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
             )
         }
-        AndroidView(factory = { web }, modifier = Modifier.weight(1f).fillMaxWidth())
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            AndroidView(factory = { web }, modifier = Modifier.fillMaxSize())
+            popup?.let { p ->
+                key(p) { AndroidView(factory = { p }, modifier = Modifier.fillMaxSize()) }
+            }
+        }
     }
 }

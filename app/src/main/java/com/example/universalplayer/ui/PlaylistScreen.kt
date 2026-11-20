@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -78,7 +79,7 @@ private fun PlaylistsHome(lists: List<Playlist>, onOpen: (String) -> Unit) {
             LazyColumn(Modifier.padding(pad).fillMaxSize(), contentPadding = PaddingValues(bottom = 88.dp)) {
                 items(lists, key = { it.id }) { pl ->
                     Row(
-                        Modifier.fillMaxWidth().animateItemPlacement()
+                        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)
                             .longPressable({ onOpen(pl.id) }, { target = pl })
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -176,7 +177,7 @@ private fun PlaylistDetail(
                 LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 88.dp)) {
                     itemsIndexed(shown, key = { _, item -> item.url }) { i, h ->
                         Row(
-                            Modifier.fillMaxWidth().animateItemPlacement()
+                            Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)
                                 .longPressable({ onPlay(shown, i) }, { target = h })
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically

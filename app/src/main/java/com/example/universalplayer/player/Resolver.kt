@@ -122,7 +122,10 @@ object Resolver {
         val out = try {
             runYt()
         } catch (e: Exception) {
-            InstagramFallback.resolve(url, o)?.let { return@withContext it }
+            InstagramFallback.resolve(url, o)?.let {
+                if (it.isShort) memo[memoKey(url, o)] = it
+                return@withContext it
+            }
             throw e
         }
         val line = out.lineSequence().map { it.trim() }.lastOrNull { it.startsWith("{") }

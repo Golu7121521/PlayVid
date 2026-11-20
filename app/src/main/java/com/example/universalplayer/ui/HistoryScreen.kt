@@ -3,6 +3,7 @@ package com.example.universalplayer.ui
 import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -77,7 +78,7 @@ fun HistoryScreen(query: String, onQuery: (String) -> Unit, listState: LazyListS
                 LazyColumn(Modifier.fillMaxSize(), state = listState) {
                     items(shown, key = { it.url }) { h ->
                         Row(
-                            Modifier.fillMaxWidth().animateItemPlacement()
+                            Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)
                                 .longPressable({ onPlay(h) }, { target = h })
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically

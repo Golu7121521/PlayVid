@@ -9,12 +9,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 
-data class LoginSite(val name: String, val url: String, val domain: String)
+data class LoginSite(val name: String, val url: String, val domain: String, val desktop: Boolean = false)
 
 val LOGIN_SITES = listOf(
     LoginSite("Instagram", "https://www.instagram.com/accounts/login/", "instagram.com"),
     LoginSite("Facebook", "https://m.facebook.com/login", "facebook.com"),
-    LoginSite("X (Twitter)", "https://x.com/i/flow/login", "x.com")
+    LoginSite("X (Twitter)", "https://x.com/i/flow/login", "x.com", desktop = true)
 )
 
 /** Stores cookies of sites the user signed in to (used by yt-dlp for age-restricted / private videos). */
