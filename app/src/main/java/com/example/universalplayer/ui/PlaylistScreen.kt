@@ -5,7 +5,13 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -29,14 +35,18 @@ import com.example.universalplayer.normalizeUrl
 import kotlinx.coroutines.launch
 
 @Composable
-fun PlaylistScreen(openId: String?, onOpen: (String?) -> Unit, onPlay: (List<HistoryItem>, Int) -> Unit) {
+fun PlaylistScreen(
+    openId: String?, onOpen: (String?) -> Unit,
+    query: String, onQuery: (String) -> Unit, listState: LazyListState,
+    onPlay: (List<HistoryItem>, Int) -> Unit
+) {
     val lists by PlaylistStore.playlists.collectAsState()
     val open = lists.firstOrNull { it.id == openId }
     if (open == null) {
         PlaylistsHome(lists) { onOpen(it) }
     } else {
         BackHandler { onOpen(null) }
-        PlaylistDetail(open, onBack = { onOpen(null) }, onPlay = onPlay)
+        PlaylistDetail(open, query, onQuery, listState, onBack = { onOpen(null) }, onPlay = onPlay)
     }
 }
 
@@ -103,8 +113,10 @@ private fun PlaylistsHome(lists: List<Playlist>, onOpen: (String) -> Unit) {
 // ------------------------------------------------------------------ one playlist
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-private fun PlaylistDetail(pl: Playlist, onBack: () -> Unit, onPlay: (List<HistoryItem>, Int) -> Unit) {
-    var query by remember { mutableStateOf("") }
+private fun PlaylistDetail(
+    pl: Playlist, query: String, onQuery: (String) -> Unit, listState: LazyListState,
+    onBack: () -> Unit, onPlay: (List<HistoryItem>, Int) -> Unit
+) {
     val shown = remember(pl.items, query) {
         if (query.isBlank()) pl.items else pl.items.filter { it.title.contains(query, true) }
     }
@@ -144,12 +156,12 @@ private fun PlaylistDetail(pl: Playlist, onBack: () -> Unit, onPlay: (List<Histo
         Column(Modifier.padding(pad).fillMaxSize()) {
             if (pl.items.size > 8) {
                 OutlinedTextField(
-                    query, { query = it },
+                    query, onQuery,
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     placeholder = { Text("Search in playlist") },
                     leadingIcon = { Icon(Icons.Rounded.Search, null) },
                     trailingIcon = {
-                        if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, "Clear") }
+                        if (query.isNotEmpty()) IconButton(onClick = { onQuery("") }) { Icon(Icons.Rounded.Close, "Clear") }
                     },
                     singleLine = true, shape = RoundedCornerShape(28.dp)
                 )
@@ -161,7 +173,7 @@ private fun PlaylistDetail(pl: Playlist, onBack: () -> Unit, onPlay: (List<Histo
                     if (pl.items.isEmpty()) "Add a link or import an M3U playlist from the menu" else "Try a different search"
                 )
             } else {
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 88.dp)) {
+                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 88.dp)) {
                     itemsIndexed(shown, key = { _, item -> item.url }) { i, h ->
                         Row(
                             Modifier.fillMaxWidth().animateItemPlacement()
@@ -222,9 +234,36 @@ private fun PlaylistDetail(pl: Playlist, onBack: () -> Unit, onPlay: (List<Histo
 private fun CreatePlaylistDialog(onDismiss: () -> Unit) {
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
+    var fileName by remember { mutableStateOf<String?>(null) }
+    var fileText by remember { mutableStateOf<String?>(null) }
     var err by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val ctx = LocalContext.current
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val text = withContext(Dispatchers.IO) {
+                    runCatching { ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } }.getOrNull()
+                }
+                val label = withContext(Dispatchers.IO) {
+                    runCatching {
+                        ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                            if (it.moveToFirst()) it.getString(0) else null
+                        }
+                    }.getOrNull()
+                }
+                if (text.isNullOrBlank()) {
+                    err = "Could not read this file"
+                } else {
+                    fileText = text
+                    fileName = label ?: "Playlist file"
+                    err = null
+                }
+            }
+        }
+    }
 
     CompactDialog(
         onDismissRequest = { if (!loading) onDismiss() },
@@ -235,10 +274,26 @@ private fun CreatePlaylistDialog(onDismiss: () -> Unit) {
                     name, { name = it; err = null }, singleLine = true, enabled = !loading,
                     label = { Text("Playlist name") }
                 )
-                OutlinedTextField(
-                    url, { url = it; err = null }, singleLine = true, enabled = !loading,
-                    label = { Text("M3U playlist link") }
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = fileName ?: url,
+                        onValueChange = { if (fileName == null) { url = it; err = null } },
+                        singleLine = true,
+                        enabled = !loading && fileName == null,
+                        label = { Text(if (fileName != null) "Playlist file" else "M3U playlist link") },
+                        trailingIcon = {
+                            if (fileName != null) {
+                                IconButton(onClick = { fileName = null; fileText = null }) { Icon(Icons.Rounded.Close, "Remove file") }
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    // only one source works: link OR file
+                    IconButton(
+                        enabled = !loading && url.isBlank() && fileName == null,
+                        onClick = { picker.launch(arrayOf("*/*")) }
+                    ) { Icon(Icons.Rounded.FolderOpen, "Pick file") }
+                }
                 if (loading) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -252,6 +307,14 @@ private fun CreatePlaylistDialog(onDismiss: () -> Unit) {
         confirmButton = {
             TextButton(enabled = !loading, onClick = {
                 if (name.isBlank()) { err = "Enter a playlist name"; return@TextButton }
+                val text = fileText
+                if (text != null) {
+                    val items = M3u.parse(text)
+                    if (items.isEmpty()) { err = "No videos found in this file"; return@TextButton }
+                    PlaylistStore.create(name, items)
+                    onDismiss()
+                    return@TextButton
+                }
                 val link = url.trim()
                 if (link.isEmpty()) { PlaylistStore.create(name); onDismiss(); return@TextButton }
                 val u = normalizeUrl(link)
@@ -267,7 +330,7 @@ private fun CreatePlaylistDialog(onDismiss: () -> Unit) {
                         loading = false
                     }
                 }
-            }) { Text(if (url.isBlank()) "Create" else "Create & import") }
+            }) { Text(if (url.isNotBlank() || fileName != null) "Create & import" else "Create") }
         },
         dismissButton = { TextButton(enabled = !loading, onClick = onDismiss) { Text("Cancel") } }
     )

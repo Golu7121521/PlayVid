@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,9 +28,8 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun HistoryScreen(onPlay: (HistoryItem) -> Unit) {
+fun HistoryScreen(query: String, onQuery: (String) -> Unit, listState: LazyListState, onPlay: (HistoryItem) -> Unit) {
     val all by HistoryStore.items.collectAsState()
-    var query by remember { mutableStateOf("") }
     val shown = remember(all, query) {
         if (query.isBlank()) all else all.filter { it.title.contains(query, true) || it.url.contains(query, true) }
     }
@@ -57,12 +57,12 @@ fun HistoryScreen(onPlay: (HistoryItem) -> Unit) {
         Column(Modifier.padding(pad).fillMaxSize()) {
             if (all.isNotEmpty()) {
                 OutlinedTextField(
-                    query, { query = it },
+                    query, onQuery,
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     placeholder = { Text("Search history") },
                     leadingIcon = { Icon(Icons.Rounded.Search, null) },
                     trailingIcon = {
-                        if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, "Clear") }
+                        if (query.isNotEmpty()) IconButton(onClick = { onQuery("") }) { Icon(Icons.Rounded.Close, "Clear") }
                     },
                     singleLine = true, shape = RoundedCornerShape(28.dp)
                 )
@@ -74,7 +74,7 @@ fun HistoryScreen(onPlay: (HistoryItem) -> Unit) {
                     if (all.isEmpty()) "Videos you watch will show up here" else "Try a different search"
                 )
             } else {
-                LazyColumn(Modifier.fillMaxSize()) {
+                LazyColumn(Modifier.fillMaxSize(), state = listState) {
                     items(shown, key = { it.url }) { h ->
                         Row(
                             Modifier.fillMaxWidth().animateItemPlacement()

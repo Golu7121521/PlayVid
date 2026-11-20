@@ -3,6 +3,7 @@ package com.example.universalplayer.ui
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.os.Build
+import android.os.Message
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -64,13 +65,30 @@ fun LoginScreen(site: LoginSite, onClose: () -> Unit) {
                 setSupportZoom(true)
                 builtInZoomControls = true
                 displayZoomControls = false
-                setSupportMultipleWindows(false)
+                setSupportMultipleWindows(true)
                 if (Build.VERSION.SDK_INT >= 29) forceDark = WebSettings.FORCE_DARK_OFF
             }
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView?, newProgress: Int) { progress = newProgress }
+
+                // links that open in a "new window" (verification / phone number steps) load in this page
+                override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
+                    val temp = WebView(view.context)
+                    temp.webViewClient = object : WebViewClient() {
+                        override fun onPageStarted(v: WebView, url: String?, favicon: Bitmap?) {
+                            if (!url.isNullOrBlank() && url != "about:blank") {
+                                view.loadUrl(url)
+                                v.stopLoading()
+                                v.destroy()
+                            }
+                        }
+                    }
+                    (resultMsg.obj as WebView.WebViewTransport).webView = temp
+                    resultMsg.sendToTarget()
+                    return true
+                }
             }
             webViewClient = object : WebViewClient() {
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {

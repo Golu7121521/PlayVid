@@ -135,25 +135,8 @@ fun HomeScreen(
 
 @Composable
 private fun Hero() {
-    val t = rememberInfiniteTransition(label = "hero")
-    val s by t.animateFloat(
-        1f, 1.08f,
-        infiniteRepeatable(tween(1400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "pulse"
-    )
-    val rot by t.animateFloat(
-        0f, 360f,
-        infiniteRepeatable(tween(6000, easing = LinearEasing)),
-        label = "rotate"
-    )
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Box(
-            Modifier.size(64.dp).graphicsLayer { scaleX = s; scaleY = s; rotationZ = rot }.clip(CircleShape)
-                .background(Brush.linearGradient(listOf(BrandStart, BrandEnd))),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Rounded.PlayArrow, null, Modifier.size(38.dp), tint = Color.White)
-        }
+        BrandLogo(64.dp, rotate = true, pulse = true)
         Column {
             Text("Play anything", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(

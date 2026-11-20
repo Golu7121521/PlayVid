@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
-import android.os.SystemClock
 import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -15,6 +14,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -44,13 +47,13 @@ class MainActivity : ComponentActivity() {
     private var tab by mutableStateOf(Tab.Home)
     private var homeText by mutableStateOf("")
     private var playlistOpenId by mutableStateOf<String?>(null)
+    private var playlistQuery by mutableStateOf("")
+    private var historyQuery by mutableStateOf("")
     private var loginSite by mutableStateOf<com.example.universalplayer.data.LoginSite?>(null)
     private var lastClip: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val splash = installSplashScreen()
-        val splashStart = SystemClock.uptimeMillis()
-        splash.setKeepOnScreenCondition { SystemClock.uptimeMillis() - splashStart < 3000 }
+        installSplashScreen()
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         handleIntent(intent)
@@ -58,7 +61,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             UniversalPlayerTheme {
                 val form = remember { AdvancedForm() }
+                val plState = rememberLazyListState()
+                val hState = rememberLazyListState()
+                var showSplash by remember { mutableStateOf(true) }
+                LaunchedEffect(Unit) { delay(2000); showSplash = false }
+                LaunchedEffect(playlistOpenId) { plState.scrollToItem(0) }
                 Surface(Modifier.fillMaxSize()) {
+                  Box(Modifier.fillMaxSize()) {
                     AnimatedContent(
                         targetState = screen,
                         transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(200)) },
@@ -89,8 +98,11 @@ class MainActivity : ComponentActivity() {
                                                     onPlayItem = { play(it.url, it.opts) }
                                                 )
                                                 Tab.Advanced -> AdvancedScreen(form, onLogin = { loginSite = it; screen = Screen.Login }) { url, o -> play(url, o) }
-                                                Tab.History -> HistoryScreen { play(it.url, it.opts) }
-                                                Tab.Playlist -> PlaylistScreen(playlistOpenId, { playlistOpenId = it }) { items, i ->
+                                                Tab.History -> HistoryScreen(historyQuery, { historyQuery = it }, hState) { play(it.url, it.opts) }
+                                                Tab.Playlist -> PlaylistScreen(
+                                                    playlistOpenId, { playlistOpenId = it; playlistQuery = "" },
+                                                    playlistQuery, { playlistQuery = it }, plState
+                                                ) { items, i ->
                                                     vm.openQueue(items, i)
                                                     screen = Screen.Player
                                                 }
@@ -108,6 +120,8 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
+                    AnimatedVisibility(visible = showSplash, exit = fadeOut(tween(300))) { SplashContent() }
+                  }
                 }
             }
         }
