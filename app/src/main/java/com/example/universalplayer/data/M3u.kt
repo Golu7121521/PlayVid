@@ -33,6 +33,8 @@ object M3u {
         var logo: String? = null
         var referer = ""
         var ua = ""
+        var kScheme = ""
+        var kKey = ""
         val now = System.currentTimeMillis()
         for (raw in text.lineSequence()) {
             val line = raw.trim().removePrefix("\uFEFF")
@@ -40,7 +42,13 @@ object M3u {
             if (line.startsWith("#EXTINF")) {
                 title = line.substringAfterLast(',', "").trim().ifBlank { null }
                 logo = logoRegex.find(line)?.groupValues?.get(1)?.ifBlank { null }
-                referer = ""; ua = ""
+                referer = ""; ua = ""; kScheme = ""; kKey = ""
+            } else if (line.startsWith("#KODIPROP:")) {
+                val kv = line.removePrefix("#KODIPROP:")
+                val k = kv.substringBefore('=').lowercase()
+                val v = kv.substringAfter('=', "").trim()
+                if (k.endsWith("license_type")) kScheme = normalizeDrmScheme(v)
+                if (k.endsWith("license_key")) kKey = v
             } else if (line.startsWith("#EXTVLCOPT:")) {
                 val kv = line.removePrefix("#EXTVLCOPT:")
                 val k = kv.substringBefore('=').lowercase()
@@ -51,9 +59,14 @@ object M3u {
                 continue
             } else {
                 if (line.startsWith("http", true) && line !in out) {
-                    out[line] = HistoryItem(line, title ?: line, logo, now, PlayOptions(referer = referer, userAgent = ua))
+                    val base = PlayOptions(
+                        referer = referer, userAgent = ua, drmLicense = kKey,
+                        drmScheme = kScheme.ifBlank { "Widevine" }
+                    )
+                    val (clean, po) = splitLinkOptions(line, base)
+                    out[line] = HistoryItem(clean, title ?: clean, logo, now, po)
                 }
-                title = null; logo = null; referer = ""; ua = ""
+                title = null; logo = null; referer = ""; ua = ""; kScheme = ""; kKey = ""
             }
         }
         return out.values.toList()

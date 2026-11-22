@@ -44,3 +44,52 @@ val USER_AGENTS = listOf(
 )
 
 val DRM_SCHEMES = listOf("Widevine", "PlayReady", "ClearKey")
+
+private val INLINE_KEY_SPLIT = Regex(
+    "[&|](?=(?:drmScheme|drmLicense|drm_scheme|drm_license|drmType|license_type|license_key|licenseKey|" +
+        "user-agent|useragent|referer|referrer|origin|cookie)=)",
+    RegexOption.IGNORE_CASE
+)
+private val KID_KEY = Regex("^[0-9a-fA-F]{32}:[0-9a-fA-F]{32}(,[0-9a-fA-F]{32}:[0-9a-fA-F]{32})*$")
+
+fun normalizeDrmScheme(s: String): String = when {
+    s.contains("clear", true) -> "ClearKey"
+    s.contains("play", true) -> "PlayReady"
+    s.contains("wide", true) -> "Widevine"
+    else -> s
+}
+
+/**
+ * Supports the common IPTV link style:
+ *   https://host/stream.mpd?|drmScheme=clearkey&drmLicense=KID:KEY
+ *   https://host/stream.mpd|User-Agent=xyz&Referer=https://site
+ * Returns the clean URL plus the options found after the "|" merged over [base].
+ */
+fun splitLinkOptions(raw: String, base: PlayOptions = PlayOptions()): Pair<String, PlayOptions> {
+    val i = raw.indexOf('|')
+    if (i < 0) return raw to base
+    val url = raw.substring(0, i).trim().trimEnd('?', '&')
+    var o = base
+    for (part in raw.substring(i + 1).split(INLINE_KEY_SPLIT)) {
+        val eq = part.indexOf('=')
+        if (eq <= 0) continue
+        val k = part.substring(0, eq).trim().lowercase()
+        var v = part.substring(eq + 1).trim()
+        if (v.contains('%')) v = runCatching { java.net.URLDecoder.decode(v, "UTF-8") }.getOrDefault(v)
+        if (v.isEmpty()) continue
+        o = when (k) {
+            "drmscheme", "drm_scheme", "drmtype", "license_type" -> o.copy(drmScheme = normalizeDrmScheme(v))
+            "drmlicense", "drm_license", "license_key", "licensekey" -> o.copy(drmLicense = v)
+            "user-agent", "useragent" -> o.copy(userAgent = v)
+            "referer", "referrer" -> o.copy(referer = v)
+            "origin" -> o.copy(origin = v)
+            "cookie" -> o.copy(cookie = v)
+            else -> o
+        }
+    }
+    // a bare kid:key license is always ClearKey
+    if (o.drmLicense.isNotBlank() && KID_KEY.matches(o.drmLicense.replace(" ", "")) && o.drmScheme != "ClearKey") {
+        o = o.copy(drmScheme = "ClearKey")
+    }
+    return url to o
+}

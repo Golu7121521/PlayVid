@@ -30,6 +30,8 @@ import androidx.media3.exoplayer.drm.DefaultDrmSessionManagerProvider
 import com.example.universalplayer.data.HistoryItem
 import com.example.universalplayer.data.HistoryStore
 import com.example.universalplayer.data.PlayOptions
+import com.example.universalplayer.data.normalizeDrmScheme
+import com.example.universalplayer.data.splitLinkOptions
 import com.example.universalplayer.data.PlaylistStore
 import com.example.universalplayer.langLabel
 import kotlinx.coroutines.CancellationException
@@ -191,11 +193,17 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------------------------------------------------------------- opening
     fun open(url: String, o: PlayOptions = PlayOptions()) {
-        val u = url.trim()
+        val (u, po) = splitLinkOptions(url.trim(), o)
         queue = emptyList()
         queueIndex = -1
-        if (u == currentUrl && _load.value is LoadState.Ready && o == opts) return
-        opts = o
+        if (u == currentUrl && _load.value is LoadState.Ready && po == opts) return
+        opts = po
+        startLoad(u)
+    }
+
+    private fun loadQueueItem(it: HistoryItem) {
+        val (u, po) = splitLinkOptions(it.url, it.opts)
+        opts = po
         startLoad(u)
     }
 
@@ -203,23 +211,20 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         if (index !in items.indices) return
         queue = items
         queueIndex = index
-        opts = items[index].opts
-        startLoad(items[index].url)
+        loadQueueItem(items[index])
     }
 
     fun skipNext() {
         if (queueIndex in 0 until queue.size - 1) {
             queueIndex++
-            opts = queue[queueIndex].opts
-            startLoad(queue[queueIndex].url)
+            loadQueueItem(queue[queueIndex])
         }
     }
 
     fun skipPrev() {
         if (queueIndex > 0) {
             queueIndex--
-            opts = queue[queueIndex].opts
-            startLoad(queue[queueIndex].url)
+            loadQueueItem(queue[queueIndex])
         }
     }
 
@@ -257,7 +262,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                         r.directMime?.let { setMimeType(it) }
                         if (opts.hasDrm) setDrmConfiguration(drmConfig(opts))
                     }.build()
-                    player.setMediaSource(directFactory(opts).createMediaSource(item), startArg)
+                    player.setMediaSource(directFactory(opts, r.directUrl!!).createMediaSource(item), startArg)
                 } else {
                     val hs = heights(r)
                     selHeight = rememberedHeight[r.webUrl]?.takeIf { it in hs } ?: hs.firstOrNull { it <= 1080 } ?: hs.firstOrNull() ?: 0
@@ -561,10 +566,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---------------------------------------------------------------- DRM / custom headers
-    private fun directFactory(o: PlayOptions): DefaultMediaSourceFactory {
-        val dsf = DefaultHttpDataSource.Factory()
+    private fun directFactory(o: PlayOptions, url: String): DefaultMediaSourceFactory {
+        val http = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
             .setDefaultRequestProperties(o.headers())
+        // keep the signed token (?edge-cache-token=... etc.) on child playlists, segments and keys
+        val dsf = androidx.media3.datasource.ResolvingDataSource.Factory(http, TokenPropagation.resolver(url))
         val f = DefaultMediaSourceFactory(dsf)
         if (o.hasDrm) {
             // DefaultDataSource also understands data: URIs (used for ClearKey keys)
@@ -578,7 +585,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun drmConfig(o: PlayOptions): MediaItem.DrmConfiguration {
-        val uuid = when (o.drmScheme) {
+        val uuid = when (normalizeDrmScheme(o.drmScheme)) {
             "PlayReady" -> C.PLAYREADY_UUID
             "ClearKey" -> C.CLEARKEY_UUID
             else -> C.WIDEVINE_UUID
